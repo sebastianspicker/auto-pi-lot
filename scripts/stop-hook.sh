@@ -26,6 +26,9 @@ if [ "$STOP_HOOK_ACTIVE" = "true" ]; then
 fi
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Use the path's real on-disk casing. On case-insensitive file systems a session started
+# from, say, ~/projects instead of ~/Projects makes TypeScript see every file twice.
+REPO_ROOT="$(node -e 'process.stdout.write(require("fs").realpathSync.native(process.argv[1]))' "$REPO_ROOT")"
 cd "$REPO_ROOT" || exit 2
 
 OUTPUT="$(npm run check 2>&1)"

@@ -5,7 +5,7 @@ Accepted 2026-09-24. Work package: AP-01.
 ## Context
 
 The scaffold's `validateGraphSpec` threw a plain `Error` at the first problem. Planner output
-is untrusted and repaired in bounded loops (handoff §8), which needs machine-readable feedback,
+is untrusted and repaired in bounded loops (design document §6), which needs machine-readable feedback,
 and AT-03 requires typed rejections without state changes.
 
 ## Decision

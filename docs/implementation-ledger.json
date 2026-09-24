@@ -5,7 +5,7 @@
   "asOf": "2026-09-24",
   "project": "auto-pi-lot",
   "purpose": "Canonical implementation work DAG and evidence ledger for the complete local Pi graph harness. Proposed locations and acceptance scenarios are not implemented capabilities.",
-  "implementationHandoff": "docs/implementation-handoff.md",
+  "implementationHandoff": "docs/design.md",
   "acceptanceMatrix": "docs/acceptance-matrix.md",
   "baselineHandoff": "docs/archive/scaffold-handoff.md",
   "legacyReview": "docs/reviews/pi-graph-2026-09-22.md",

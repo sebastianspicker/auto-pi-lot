@@ -6,11 +6,10 @@ Plan revision 3 — 2026-09-24. Packages restructured per
 their recorded evidence describes the pre-restructure tree and needs a fresh review before
 any status change; everything else is unimplemented.
 
-The [full-project handoff](implementation-handoff.md) specifies the target design.
-The [implementation ledger](implementation-ledger.json) is authoritative for stable
-AP IDs, dependencies, deliverables, status and evidence. The
+The [design document](design.md) specifies the target design. The
+[implementation ledger](implementation-ledger.json) is the authoritative source for AP IDs,
+dependencies, deliverables, status and evidence; this page just orients you toward it. The
 [acceptance matrix](acceptance-matrix.md) defines AT-01–AT-41 verification obligations.
-This page is navigation, not a second completion tracker.
 
 | Milestone | Work packages | Exit condition |
 | --- | --- | --- |

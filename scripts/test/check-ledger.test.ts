@@ -17,7 +17,7 @@ const defaultTask: LedgerTask = {
 
 function ledgerWithTasks(tasks: LedgerTask[], milestonePackages: string[] = tasks.map((task) => task.id)): Ledger {
   return {
-    implementationHandoff: "docs/implementation-handoff.md",
+    implementationHandoff: "docs/design.md",
     acceptanceMatrix: "docs/acceptance-matrix.md",
     baselineHandoff: "docs/archive/scaffold-handoff.md",
     legacyReview: "docs/reviews/legacy.md",

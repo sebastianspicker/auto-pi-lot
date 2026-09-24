@@ -1,8 +1,8 @@
 # Architecture
 
-> **Archived 2026-09-24.** Historical baseline only; superseded by the [implementation handoff](../implementation-handoff.md) and [ledger](../implementation-ledger.json). Do not update.
+> **Archived 2026-09-24.** Historical baseline only; superseded by the [design document](../design.md) and [ledger](../implementation-ledger.json). Do not update.
 
-Initial design overview. The [full-project implementation handoff](../implementation-handoff.md)
+Initial design overview. The [design document](../design.md)
 refines runtime semantics and boundaries after the predecessor review; follow its
 [ledger](../implementation-ledger.json) for implementation order and status.
 

@@ -2,7 +2,7 @@
   "name": "auto-pi-lot",
   "version": "0.0.0",
   "private": true,
-  "description": "Hierarchical graph orchestration for the Pi coding agent",
+  "description": "Local-first graph orchestration for the Pi coding agent",
   "type": "module",
   "engines": {
     "node": ">=22.19.0"
@@ -22,7 +22,8 @@
     "fingerprint": "tsx scripts/source-fingerprint.ts",
     "check": "npm run test && npm run lint && npm run ledger && npm run links",
     "demo": "npm run build && node packages/cli/dist/index.js demo",
-    "sim": "tsx packages/core/test/sim/sweep.ts 5000"
+    "sim": "tsx packages/core/test/sim/sweep.ts 5000",
+    "site": "npm run build && node packages/cli/dist/index.js trace > site/trace.json"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.14",
@@ -30,5 +31,22 @@
     "tsx": "4.23.15",
     "typescript": "7.0.2",
     "zod": "4.6.5"
-  }
+  },
+  "homepage": "https://sebastianspicker.github.io/auto-pi-lot/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sebastianspicker/auto-pi-lot.git"
+  },
+  "bugs": {
+    "url": "https://github.com/sebastianspicker/auto-pi-lot/issues"
+  },
+  "keywords": [
+    "pi-coding-agent",
+    "ai-agents",
+    "coding-agent",
+    "orchestration",
+    "task-graph",
+    "dag",
+    "typescript"
+  ]
 }

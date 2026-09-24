@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>auto-pi-lot run traces</title>
+    <meta
+      name="description"
+      content="Step through real run traces from the auto-pi-lot reducer: validated task graphs, dispatch, retries, fencing and host acceptance."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="masthead">
+      <div class="masthead-text">
+        <h1>auto-pi-lot run traces</h1>
+        <p>
+          Each trace below is a scripted host driving the real run reducer from
+          <code>@auto-pi-lot/core</code>. Step through it to see which events the reducer applies, which it rejects,
+          and what it asks the host to do next.
+        </p>
+      </div>
+      <a class="repo-link" href="https://github.com/sebastianspicker/auto-pi-lot">Source on GitHub</a>
+    </header>
+
+    <main>
+      <nav class="scenarios" aria-label="Scenarios" id="scenario-tabs"></nav>
+      <p class="scenario-summary" id="scenario-summary"></p>
+
+      <section class="board" aria-label="Run state">
+        <div class="graph-panel">
+          <div class="run-status" id="run-status"></div>
+          <svg id="graph" role="img" aria-label="Task graph with node states"></svg>
+          <ul class="legend" aria-label="Legend">
+            <li><span class="lamp s-pending"></span>Pending</li>
+            <li><span class="lamp s-ready"></span>Reserved</li>
+            <li><span class="lamp s-running"></span>Running</li>
+            <li><span class="lamp s-unverified"></span>Result waiting for acceptance</li>
+            <li><span class="lamp s-accepted"></span>Accepted</li>
+            <li><span class="lamp s-failed"></span>Rejected or failed</li>
+            <li><span class="lamp s-cancelled"></span>Cancelled</li>
+            <li><span class="edge-key dashed"></span>Needs a result</li>
+            <li><span class="edge-key"></span>Needs an accepted result</li>
+          </ul>
+        </div>
+
+        <aside class="step-panel" aria-live="polite">
+          <p class="step-count" id="step-count"></p>
+          <p class="step-note" id="step-note"></p>
+          <div class="outcome" id="outcome"></div>
+          <h2>Event</h2>
+          <pre class="json" id="event-json"></pre>
+          <h2>Commands for the host</h2>
+          <div id="commands"></div>
+        </aside>
+      </section>
+
+      <section class="tape-section" aria-label="Timeline">
+        <div class="controls">
+          <button type="button" id="prev" aria-label="Previous step">Previous</button>
+          <button type="button" id="next" aria-label="Next step">Next</button>
+          <button type="button" id="play">Play</button>
+        </div>
+        <ol class="tape" id="tape"></ol>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <p id="provenance"></p>
+      <p>
+        Use the arrow keys to step. The traces come from
+        <code>node packages/cli/dist/index.js trace</code>; nothing here calls a model.
+      </p>
+    </footer>
+
+    <script src="app.js" type="module"></script>
+  </body>
+</html>

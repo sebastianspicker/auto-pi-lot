@@ -1,7 +1,7 @@
 # Decision records
 
 Short records for choices that change semantics described in the
-[implementation handoff](../implementation-handoff.md). Each states context, decision and
+[design document](../design.md). Each one states context, decision and
 consequences. Superseded records stay in place with a pointer to their replacement.
 
 | ID | Decision | Status |

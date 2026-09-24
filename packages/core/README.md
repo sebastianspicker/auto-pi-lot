@@ -155,7 +155,7 @@ documented on `run/commands.ts`. See [decision 0001](../../docs/decisions/0001-e
 `tool_call`, `tool_result`, `settled`, and `error`. A `usage` event carries a nested
 `qualification` of `"reported"` (with `inputTokens`/`outputTokens`, and optional
 `cacheReadTokens`/`cacheWriteTokens`) or `"unknown"`; per the budget state machine in the
-implementation handoff, unknown usage is never reported as zero. Every `usage` event also
+design document, unknown usage is never reported as zero. Every `usage` event also
 carries `source` (`turn` or `compaction`) so accounting can attribute summary calls.
 `tool_call` and `tool_result` carry a `callId` and, respectively, a `toolName` or an
 `isError` flag. `settled` carries a closed `reason` (`completed`, `aborted`, `error`); it

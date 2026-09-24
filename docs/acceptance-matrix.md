@@ -1,24 +1,22 @@
 # Full-project acceptance matrix
 
 Status: proposed target scenarios, 2026-09-22. This matrix translates the
-[current scaffold handoff](archive/scaffold-handoff.md), [architecture](archive/initial-architecture.md), and
+[scaffold handoff](archive/scaffold-handoff.md), [architecture](archive/initial-architecture.md), and
 [pi-graph review](reviews/pi-graph-2026-09-22.md) into observable acceptance
-conditions for the full local auto-pi-lot product. It is a design and verification
-plan, not a record of executed tests. The original scaffold's 11 deterministic tests
-cover only narrow graph parsing, readiness, and result-shape guarantees. None of
-the scenarios below is marked as passed by those tests.
+conditions for the full local auto-pi-lot product. It is a design and verification plan,
+not a record of executed tests. No scenario below is verified yet; the
+[implementation ledger](implementation-ledger.json) tracks each scenario's status.
 
-The [implementation handoff](implementation-handoff.md) defines target semantics;
-the [implementation ledger](implementation-ledger.json) owns work and scenario status.
-The scenario ID is stable; implementation milestones may reorder work without
-renumbering it. The canonical implementation ledger owns each scenario's status,
-implementation link, and executed evidence receipts. A checked box here would
-conflate a proposed assertion with its observed result, so this matrix has none.
+The [design document](design.md) defines target semantics. The implementation ledger
+also owns each scenario's implementation link and executed evidence receipts. Scenario
+IDs are stable: a milestone can reorder work without renumbering a scenario. This matrix
+has no checked boxes, because checking one here would conflate a proposed assertion with
+its observed result.
 
-A package may finish its owned slice of a scenario before downstream packages exist.
-Its receipt names the assertions covered and remaining work. The whole scenario becomes
-verified only when all assertions and required evidence classes are covered for the claimed
-environments; package completion alone cannot mark a shared scenario as passed.
+A package can finish its own slice of a scenario before downstream packages exist. Its
+receipt names the assertions it covers and what remains. A scenario counts as verified
+only once every assertion and required evidence class is covered for its claimed
+environments; one package finishing its part does not mark a shared scenario passed.
 
 ## Evidence classes and receipt contract
 
@@ -31,22 +29,22 @@ environments; package completion alone cannot mark a shared scenario as passed.
 | Live | Optional, explicitly bounded real provider task or route check with declared cost ceiling and corpus. |
 | Platform | Actual Pi extension and supported OS/Node installation or packaging smoke test. |
 
-Every executed receipt should record scenario ID, source identity (commit plus
-dirty-tree fingerprint when relevant), contract/schema and SQLite migration versions,
-Node/npm/Pi versions, OS, command and arguments, environment or fixture identity,
-injection point and seed, start/end time, exit/result, observed assertions, artifact
-hashes or paths, and any skip or qualification with reason. Keep credentials and raw
-private transcripts out of receipts. For live evidence, also record exact route,
-declared allowance, observed usage, unknown usage fields, task corpus revision, and
-the single-session comparison method. A mock or fake provider receipt cannot prove
-live coding effectiveness, billing, isolation of a real provider, or platform behavior.
+Every executed receipt should record the scenario ID; source identity (commit plus
+dirty-tree fingerprint when relevant); contract/schema and SQLite migration versions;
+Node/npm/Pi versions; OS; command and arguments; environment or fixture identity;
+injection point and seed; start and end time; exit/result; observed assertions; artifact
+hashes or paths; and any skip or qualification with reason. Keep credentials and raw
+private transcripts out of receipts. Live evidence also records the exact route, declared
+allowance, observed usage, unknown usage fields, task corpus revision, and the
+single-session comparison method. A mock or fake provider receipt cannot prove live
+coding effectiveness, billing, isolation of a real provider, or platform behavior.
 
-Fault injection means stopping **before or after a durable commit or external-effect
-boundary**, then reopening the same run and checking both stored state and visible
-effects. It must not merely throw within one in-memory transaction and call that crash
-recovery. For commands or remote calls whose outcome is unknowable after a crash,
-the correct assertion is a durable uncertain/reconciliation state, not exactly-once
-execution. Tests should identify which side of a boundary the injected stop reached.
+Fault injection means stopping before or after a durable commit or external-effect
+boundary, then reopening the same run and checking both stored state and visible effects.
+It is not enough to throw within one in-memory transaction and call that crash recovery.
+When a command's or remote call's outcome is unknowable after a crash, the correct
+assertion is a durable uncertain/reconciliation state, not exactly-once execution. Tests
+should identify which side of a boundary the injected stop reached.
 
 ## Intake, protocol, planning, and root requirements
 

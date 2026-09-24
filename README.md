@@ -1,67 +1,115 @@
 # auto-pi-lot
 
-Graph mode for the Pi coding agent: a local harness for autonomous coding and
-problem solving with bounded loops, child graphs, and grandchild graphs.
+[![checks](https://github.com/sebastianspicker/auto-pi-lot/actions/workflows/ci.yml/badge.svg)](https://github.com/sebastianspicker/auto-pi-lot/actions/workflows/ci.yml)
+[![pages](https://github.com/sebastianspicker/auto-pi-lot/actions/workflows/pages.yml/badge.svg)](https://sebastianspicker.github.io/auto-pi-lot/)
 
-**Status: early foundation.** Graph execution is not available yet. This repository contains
-validated wire contracts and graph validation, a pure, simulation-tested run reducer, a Pi SDK
-session adapter, a Pi extension status command and a plan-only CLI demo. Nothing persists
-state or starts model calls.
+Graph mode for the [Pi coding agent](https://www.npmjs.com/package/@earendil-works/pi-coding-agent):
+a local harness that turns a coding task into a graph of smaller tasks, runs them with
+bounded retries, and only trusts a result once the host has checked it.
 
-## Development
+The rule behind the design is that **agents propose, the harness decides**. A model can suggest
+a plan or report that its work is done. Deterministic code validates the plan, schedules each
+attempt, enforces limits and decides whether a result is accepted.
 
-Use Node.js 22.19.0 or newer and npm. No model credentials are required for these commands.
+> **Status: early foundation.** The deterministic core is built and tested: graph
+> validation, a pure run reducer and the Pi session adapter. Running real tasks end to end
+> (storage, worker processes, the supervisor, `/graph on`) is not built yet. See the
+> [roadmap](docs/roadmap.md).
+
+**[Open the interactive trace viewer](https://sebastianspicker.github.io/auto-pi-lot/)**
+
+## Tour
+
+The trace viewer replays real output from the run reducer: a scripted host sends events, and
+the reducer decides what happens next. Nothing in it calls a model.
+
+### A run, step by step
+
+![Happy path: verify starts while implement's result is still unverified](docs/images/tour-happy-path.png)
+
+`implement → verify` is a *result* edge, so the verifier can start on a result that has not
+been accepted yet. `verify → review` is an *accepted* edge, so the reviewer waits until the
+host has accepted the verification. Each step shows the event, whether the reducer applied it,
+and the commands it hands back to the host.
+
+### Retries and stale workers
+
+![Retry and fencing: a late result from an old attempt is rejected](docs/images/tour-retry-fencing.png)
+
+When an attempt fails, the reducer schedules a new attempt with a new ID and a higher fencing
+token. A late message from the old attempt, or one carrying the wrong token, is rejected and
+leaves the state untouched. Rejected events show up as red marks on the timeline.
+
+### Cancellation
+
+![Cancellation: running work is stopped and nothing new is dispatched](docs/images/tour-cancellation.png)
+
+Cancelling a run stops running attempts, cancels work that hasn't started, and waits for
+outstanding acceptance decisions before the run is marked cancelled. Events that arrive after
+that point are rejected.
+
+## Quick start
+
+You need Node.js 22.19 or newer. No model credentials are needed.
 
 ```sh
+git clone https://github.com/sebastianspicker/auto-pi-lot.git
+cd auto-pi-lot
 npm ci --ignore-scripts
-npm run check
-npm run demo
+npm run check        # build, tests, lint, import boundaries, docs checks
+npm run demo         # print a validated example graph and its ready nodes
+node packages/cli/dist/index.js trace   # print the scripted run traces as JSON
 ```
 
-The demo prints a validated `implement → verify → review` graph and its initially
-ready node. It does not execute tasks, write repository code, or persist a run.
-
-After building, a compatible Pi installation can load the extension:
+To load the Pi extension, build first and point Pi at it:
 
 ```sh
 pi --extension ./packages/pi/dist/extension.js
 ```
 
-`/graph` reports development status. `/graph on`, automatic planning, nested workers,
-pause/resume, and recovery remain planned features; this command does not enable them.
-`packages/pi` pins `@earendil-works/pi-coding-agent` to `0.87.0`.
+For now `/graph` only reports that graph mode is not available yet.
 
-## Workspace
+## How it works
 
-| Package | Responsibility |
+- **Graphs are validated data.** A plan is a graph of nodes and dependency edges. It is
+  parsed strictly and checked for duplicate IDs, unknown endpoints, cycles, ownership and
+  the depth limit. A graph that passes gets a `ValidatedGraph` type; the rest of the system
+  accepts nothing else.
+- **One pure reducer runs the graph.** `decide(state, event)` returns the next state plus
+  commands for the host, such as "dispatch this attempt" or "evaluate this result". Stale,
+  duplicate or out-of-order events are rejected with a typed reason. Recovery replays the
+  event log through the same function.
+- **Results are proposals.** A worker's result is `unverified` until the host's acceptance
+  gate decides. An edge says whether the next task needs any result (`result_ready`) or an
+  accepted one (`accepted`).
+- **Providers stay at the edge.** The core knows nothing about Pi or any model API. The Pi
+  adapter translates the SDK's session events into provider-neutral ones, and never reports
+  missing token usage as zero.
+
+The full target design, including child graphs, budgets, workspaces and recovery, is in
+[docs/design.md](docs/design.md).
+
+## Repository layout
+
+| Path | Contents |
 | --- | --- |
-| [`core`](packages/core/README.md) | Deterministic, provider-neutral domain: wire schemas, graph validation, run reducer, evidence records, session port |
-| [`pi`](packages/pi/README.md) | All Pi SDK code: session adapter and the `/graph` extension |
-| [`cli`](packages/cli/README.md) | Operator entry point and plan-only demo |
+| [`packages/core`](packages/core/README.md) | Deterministic domain: schemas, graph validation, run reducer, evidence records, session port |
+| [`packages/pi`](packages/pi/README.md) | Everything that touches the Pi SDK: the session adapter and the `/graph` extension |
+| [`packages/cli`](packages/cli/README.md) | `demo` and `trace` commands, and later the local supervisor |
+| [`site/`](site) | The trace viewer published to GitHub Pages |
+| [`docs/`](docs/architecture.md) | Architecture, design, roadmap, decision records |
 
-[docs/architecture.md](docs/architecture.md) explains the boundaries, how they are enforced
-and where new code goes.
+Import boundaries between packages are enforced by Biome as part of `npm run lint`.
 
-Read [AGENTS.md](AGENTS.md) for contributor guidance and the
-[full-project implementation handoff](docs/implementation-handoff.md) for the target runtime.
-The [implementation ledger](docs/implementation-ledger.json) tracks work packages and evidence;
-the [acceptance matrix](docs/acceptance-matrix.md) defines proposed verification scenarios.
-Use the [roadmap](docs/roadmap.md) to navigate milestones. The
-[scaffold handoff](docs/archive/scaffold-handoff.md) and [initial architecture](docs/archive/initial-architecture.md)
-preserve the starting baseline; [decision records](docs/decisions/README.md) explain later changes.
+## Documentation
 
-The [pi-graph predecessor review](docs/reviews/pi-graph-2026-09-22.md) records patterns to
-adopt or avoid, verification evidence, and recommended changes to the implementation sequence.
+- [Architecture](docs/architecture.md): what exists, the package boundaries, and where new code goes
+- [Design](docs/design.md): the complete product this repository is building toward
+- [Roadmap](docs/roadmap.md): milestones and current status; the [ledger](docs/implementation-ledger.json) has the details
+- [Acceptance scenarios](docs/acceptance-matrix.md): the failure cases the finished system must handle
+- [Decision records](docs/decisions/README.md): why things are the way they are
 
-## Design commitments
+## Contributing
 
-- Agents propose work; deterministic code validates and controls execution.
-- Graph ownership, dependencies, and attempt history are separate structures.
-- Root graphs may own children; children may own grandchildren; depth is bounded at 2.
-- One global scheduler and one root budget cover every descendant.
-- Waiting parents release execution capacity. Concurrent writers use separate worktrees.
-- Verification evidence names the exact candidate revision; integration requires new checks.
-- Durable intent, immutable graph revisions, and idempotency support eventual recovery.
-
-These are implementation requirements, not claims that the scaffold already enforces
-every runtime invariant. See the roadmap for outstanding work.
+See [CONTRIBUTING.md](CONTRIBUTING.md). Coding agents working in this repository follow
+[AGENTS.md](AGENTS.md).

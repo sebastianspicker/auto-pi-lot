@@ -4,7 +4,7 @@ Accepted 2026-09-24. Work packages: AP-05, AP-08, AP-09. **Superseded by [0004](
 
 ## Context
 
-Handoff §4 has the engine declare the ports it consumes, while the scaffold defined
+The design document (then §4, now §2) has the engine declare the ports it consumes, while the scaffold defined
 `RunStore`, `ArtifactStore`, `WorkerAssignment` and `WorkerSessionFactory` in interface-only
 `storage` and `worker` packages, and `CodingSession` in `pi-adapter`. The worker package
 therefore depended on the Pi adapter for a provider-neutral type.

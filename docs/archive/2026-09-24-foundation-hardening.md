@@ -22,7 +22,7 @@ written directly after AP-01:
   sequences with no database, process or model;
 - gives AP-05/AP-06 a fixed event/command vocabulary to persist rather than invent.
 
-This refines, not replaces, [implementation handoff](../implementation-handoff.md) §4 and §8:
+This refines, not replaces, [design document](../design.md) §4 and §8:
 engine stays deterministic, ports stay injected, SQLite stays the single authority.
 
 ## Increments
@@ -37,7 +37,7 @@ only with exact-source evidence, per handoff §16.
 - `.agents/` added to `.gitignore` (AGENTS.md already declared it ignored).
 - CI uses `node-version-file: .node-version`; actions pinned by commit SHA.
 - `npm test` split into `typecheck:test` and `test:unit`; `check` unchanged in effect.
-- Open: create the first commit (operator action). No retrospective AP-00 fingerprint.
+- Open: the first commit has not been made yet. No retrospective AP-00 fingerprint.
 
 ### P1 — Repository gates (AP-27; implemented)
 

@@ -24,8 +24,8 @@ provides.
 - `@auto-pi-lot/pi` holds all Pi SDK code: the session adapter and the extension. It imports
   only the `@auto-pi-lot/core/session` subpath.
 - `@auto-pi-lot/cli` stays the operator entry point and composition root.
-- A port or DTO is added in the same change that first produces or consumes it. The handoff
-  §6 table remains the specification those future records must satisfy. The evidence records
+- A port or DTO is added in the same change that first produces or consumes it. The design
+  document's §4 table remains the specification those future records must satisfy. The evidence records
   that the journal events already reference (`ResultProposal`, `CheckReceipt`,
   `ReviewReceipt`, `AcceptanceRecord`) stay.
 - Effectful subsystems (storage, worker processes, supervisor) become new workspaces

@@ -1,10 +1,10 @@
 # Handoff: current status and scope
 
-> **Archived 2026-09-24.** Historical baseline only; superseded by the [implementation handoff](../implementation-handoff.md) and [ledger](../implementation-ledger.json). Do not update.
+> **Archived 2026-09-24.** Historical baseline only; superseded by the [design document](../design.md) and [ledger](../implementation-ledger.json). Do not update.
 
 Snapshot: 2026-09-22, after the initial repository scaffold.
 
-For subsequent implementation, use the [full-project handoff](../implementation-handoff.md),
+For subsequent implementation, use the [design document](../design.md),
 [work ledger](../implementation-ledger.json), and [acceptance matrix](../acceptance-matrix.md).
 They incorporate the predecessor review and refine the original next-task sequence below.
 This document remains the dated scaffold status and verification record.
@@ -155,8 +155,7 @@ or the next actionable milestone changes; keep durable contributor rules in `AGE
 
 ## Predecessor review — 2026-09-22
 
-The user subsequently requested a full architecture review of the earlier `pi-graph` project
-from a local checkout.
+A follow-up architecture review covered the earlier `pi-graph` project from a local checkout.
 The [review](../reviews/pi-graph-2026-09-22.md) covers its major runtime, persistence, Pi,
 operator and evaluation subsystems and recommends selective adoption rather than a wholesale port.
 The predecessor was left unchanged; auto-pi-lot remains the initial scaffold.

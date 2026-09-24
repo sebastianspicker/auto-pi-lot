@@ -1,8 +1,8 @@
 # Architecture
 
 This page describes the code that exists today and the rules for adding to it. The
-[implementation handoff](implementation-handoff.md) specifies the complete target product;
-the [ledger](implementation-ledger.json) tracks the work to get there.
+[design document](design.md) describes the complete product we are building toward, and the
+[roadmap](roadmap.md) and [ledger](implementation-ledger.json) track progress.
 
 ## What runs today
 
@@ -17,6 +17,9 @@ the [ledger](implementation-ledger.json) tracks the work to get there.
   and maps SDK events to provider-neutral session events.
 - **Pi extension**: `/graph` reports development status. It starts nothing.
 - **CLI**: `demo` prints a validated example graph, its topological order and its ready nodes.
+  `trace` runs three scripted scenarios through the real reducer and prints every step as
+  JSON; the [GitHub Pages viewer](https://sebastianspicker.github.io/auto-pi-lot/) (`site/`)
+  replays that output.
 
 Nothing here persists state, launches workers or calls a model. Effects exist only as the
 reducer's commands and as the injected Pi session factory.
@@ -27,7 +30,7 @@ reducer's commands and as the injected Pi session factory.
 | --- | --- | --- |
 | [`@auto-pi-lot/core`](../packages/core/README.md) | The deterministic, provider-neutral domain: wire schemas and canonical identity, graph spec and validation, run state vocabulary, journal events, reducer and replay, evidence records, and the session port | `zod`, `node:crypto` |
 | [`@auto-pi-lot/pi`](../packages/pi/README.md) | Everything coupled to the Pi SDK: the session adapter and the Pi extension entry point | `@auto-pi-lot/core/session`, Pi SDK |
-| [`@auto-pi-lot/cli`](../packages/cli/README.md) | The operator entry point and future composition root | `@auto-pi-lot/core` |
+| [`@auto-pi-lot/cli`](../packages/cli/README.md) | The operator entry point (`demo`, `trace`) and future composition root | `@auto-pi-lot/core` |
 
 ```text
           @auto-pi-lot/core ──────────────┐
@@ -93,8 +96,10 @@ format version. They are independent.
 
 ## Repository tooling
 
-`npm run check` runs build, test typecheck, unit tests, Biome lint/format, the ledger
-validator and the Markdown link checker. `scripts/` holds those repository checks, the
-exact-source fingerprint used for ledger evidence, and the Claude Code Stop hook. CI runs
-`npm ci --ignore-scripts`, `npm run check` and `npm run demo` on the Node version pinned in
-`.node-version`.
+`npm run check` runs the build, the test type-check, the unit tests, Biome (format, lint and
+boundaries), the ledger validator and the Markdown link checker. `scripts/` holds those
+repository checks, the exact-source fingerprint used for ledger evidence, and the Claude Code
+Stop hook. The `checks` workflow runs `npm ci --ignore-scripts`, `npm run check` and
+`npm run demo` on the Node version in `.node-version`. The `pages` workflow regenerates
+`site/trace.json` from the same commit and deploys `site/` to GitHub Pages, so the viewer
+always shows the current reducer's behavior.
