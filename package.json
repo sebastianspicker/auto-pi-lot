@@ -1,6 +1,7 @@
 {
   "name": "auto-pi-lot",
   "version": "0.0.0",
+  "license": "MIT",
   "private": true,
   "description": "Local-first graph orchestration for the Pi coding agent",
   "type": "module",

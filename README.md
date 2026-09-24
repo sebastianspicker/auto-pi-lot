@@ -113,3 +113,7 @@ Import boundaries between packages are enforced by Biome as part of `npm run lin
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Coding agents working in this repository follow
 [AGENTS.md](AGENTS.md).
+
+## License
+
+[MIT](LICENSE) © 2026 Sebastian Spicker
