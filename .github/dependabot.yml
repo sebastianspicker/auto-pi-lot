@@ -1,0 +1,20 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    ignore:
+      # Type definitions track the minimum supported Node.js version (.node-version).
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+    groups:
+      npm-dependencies:
+        patterns: ["*"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns: ["*"]

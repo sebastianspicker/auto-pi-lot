@@ -1,0 +1,142 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.14/schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    "ignoreUnknown": false,
+    "includes": [
+      "**",
+      "!**/dist",
+      "!**/node_modules",
+      "!**/coverage",
+      "!**/*.tsbuildinfo",
+      "!docs/implementation-ledger.json",
+      "!docs/reviews"
+    ]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 120
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "correctness": {
+        "noUndeclaredDependencies": "error"
+      },
+      "suspicious": {
+        "noImportCycles": {
+          "level": "error",
+          "options": {
+            "ignoreTypes": false
+          }
+        }
+      }
+    }
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "double",
+      "semicolons": "always",
+      "trailingCommas": "all"
+    }
+  },
+  "json": {
+    "formatter": {
+      "enabled": true
+    }
+  },
+  "assist": {
+    "enabled": true,
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["**/test/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noNonNullAssertion": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/*/src/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["**/src/**", "**/dist/**"],
+                    "message": "Import another workspace through its package name, never by a relative path into its src or dist."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/core/src/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["**", "!zod", "!node:crypto", "!./**", "!../**"],
+                    "message": "core is the deterministic, provider-neutral domain: it may import only zod, node:crypto and its own modules."
+                  },
+                  {
+                    "group": ["**/src/**", "**/dist/**"],
+                    "message": "Import another workspace through its package name, never by a relative path into its src or dist."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/pi/src/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "@auto-pi-lot/core": "The Pi package implements the session port only: import @auto-pi-lot/core/session, not the run reducer."
+                },
+                "patterns": [
+                  {
+                    "group": ["**/src/**", "**/dist/**"],
+                    "message": "Import another workspace through its package name, never by a relative path into its src or dist."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "name": "@auto-pi-lot/cli",
+  "version": "0.0.0",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@auto-pi-lot/core": "0.0.0"
+  }
+}
