@@ -1,0 +1,1816 @@
+{
+  "formatVersion": 1,
+  "planRevision": 3,
+  "planRevisionNotes": "Revision 3 (2026-09-24): packages restructured per decision 0004 (contracts+engine merge into core; pi-adapter+pi-extension merge into pi; storage/worker placeholder packages removed until AP-04/AP-05/AP-08 implement them). Every task's owns path is rewritten to the new tree. AP-01, AP-26 and AP-27 evidence records describe the pre-restructure tree; their fingerprints no longer match the current tree, and a fresh review is required before any status change.",
+  "asOf": "2026-09-24",
+  "project": "auto-pi-lot",
+  "purpose": "Canonical implementation work DAG and evidence ledger for the complete local Pi graph harness. Proposed locations and acceptance scenarios are not implemented capabilities.",
+  "implementationHandoff": "docs/implementation-handoff.md",
+  "acceptanceMatrix": "docs/acceptance-matrix.md",
+  "baselineHandoff": "docs/archive/scaffold-handoff.md",
+  "legacyReview": "docs/reviews/pi-graph-2026-09-22.md",
+  "statusVocabulary": [
+    "not_started",
+    "in_progress",
+    "partial",
+    "blocked",
+    "implemented"
+  ],
+  "scenarioStatusVocabulary": [
+    "unimplemented",
+    "implemented_unverified",
+    "verified",
+    "failed",
+    "blocked",
+    "deferred"
+  ],
+  "evidenceClasses": [
+    "static_inspection",
+    "unit",
+    "local_integration",
+    "process_fault",
+    "offline_sdk",
+    "live",
+    "platform"
+  ],
+  "updateRules": [
+    "Keep IDs stable; update dependencies and planRevision when scope changes.",
+    "Status belongs to this repository, never inherited from the predecessor.",
+    "Implemented requires integrated deliverables plus relevant checks and receipts; a blocked record names prerequisite and resolution.",
+    "Record exact source identity, command, versions, environment, result, skips and artifact references; redact credentials.",
+    "Historical evidence remains historical; changed behavior needs new relevant evidence.",
+    "Live work needs explicit authorization and bounded allowance; absent qualification must not block independent offline work.",
+    "Package completion does not mean every shared scenario is fully qualified. Track scenario-level evidence and all supported fault points/platforms separately.",
+    "A package receipt identifies its owned assertions; a scenario becomes verified only when all assertions and required evidence classes are covered on each claimed environment. Cross-package scenario links do not add hidden task dependency edges."
+  ],
+  "nextWorkPackage": "AP-01",
+  "milestones": [
+    {
+      "id": "M0",
+      "title": "Historical scaffold",
+      "packages": [
+        "AP-00"
+      ],
+      "exit": "Narrow foundation only; no autonomous runtime."
+    },
+    {
+      "id": "M1",
+      "title": "Contracts and durable fake-worker foundation",
+      "packages": [
+        "AP-01",
+        "AP-02",
+        "AP-03",
+        "AP-04",
+        "AP-05",
+        "AP-06",
+        "AP-07",
+        "AP-26",
+        "AP-27"
+      ],
+      "exit": "A flat fake-worker graph persists, verifies and restarts with conserved accounting."
+    },
+    {
+      "id": "M2",
+      "title": "Usable durable flat coding path",
+      "packages": [
+        "AP-08",
+        "AP-09",
+        "AP-10",
+        "AP-11",
+        "AP-12",
+        "AP-13",
+        "AP-14",
+        "AP-15"
+      ],
+      "exit": "Pi graph mode can plan, execute, check and deliver a task through the qualified SDK boundary; deterministic/local evidence required."
+    },
+    {
+      "id": "M3",
+      "title": "Early separately authorized live baseline",
+      "packages": [
+        "AP-16"
+      ],
+      "exit": "Small declared corpus measured; independent offline recursive implementation may proceed while live qualification is pending."
+    },
+    {
+      "id": "M4",
+      "title": "Bounded loops and complete recursion",
+      "packages": [
+        "AP-17",
+        "AP-18",
+        "AP-19",
+        "AP-20",
+        "AP-21"
+      ],
+      "exit": "Root/child/grandchild flow survives restart and boundary failure without resetting authority, budget or evidence."
+    },
+    {
+      "id": "M5",
+      "title": "Context and operations",
+      "packages": [
+        "AP-22",
+        "AP-23"
+      ],
+      "exit": "Inspectable runs, retrievable reductions, protected retention and exportable evidence."
+    },
+    {
+      "id": "M6",
+      "title": "Platform and product qualification",
+      "packages": [
+        "AP-25",
+        "AP-24"
+      ],
+      "exit": "Platform claims and live effectiveness separately supported by exact-source receipts."
+    }
+  ],
+  "releaseGates": {
+    "localExperimental": {
+      "requiresPackages": [
+        "AP-01",
+        "AP-02",
+        "AP-03",
+        "AP-04",
+        "AP-05",
+        "AP-06",
+        "AP-07",
+        "AP-08",
+        "AP-09",
+        "AP-10",
+        "AP-11",
+        "AP-12",
+        "AP-13",
+        "AP-14",
+        "AP-15",
+        "AP-17",
+        "AP-18",
+        "AP-19",
+        "AP-20",
+        "AP-21",
+        "AP-22",
+        "AP-23",
+        "AP-25"
+      ],
+      "requiresScenarioClasses": [
+        "unit",
+        "local_integration",
+        "process_fault",
+        "offline_sdk",
+        "platform"
+      ],
+      "labelWhenLivePending": "Local implementation qualified on named platforms; live coding effectiveness unqualified.",
+      "requiresVerifiedScenarios": [
+        "AT-01",
+        "AT-02",
+        "AT-03",
+        "AT-04",
+        "AT-05",
+        "AT-06",
+        "AT-07",
+        "AT-08",
+        "AT-09",
+        "AT-10",
+        "AT-11",
+        "AT-12",
+        "AT-13",
+        "AT-14",
+        "AT-15",
+        "AT-16",
+        "AT-17",
+        "AT-18",
+        "AT-19",
+        "AT-20",
+        "AT-21",
+        "AT-22",
+        "AT-23",
+        "AT-24",
+        "AT-25",
+        "AT-26",
+        "AT-27",
+        "AT-28",
+        "AT-29",
+        "AT-30",
+        "AT-31",
+        "AT-32",
+        "AT-33",
+        "AT-34",
+        "AT-35",
+        "AT-36",
+        "AT-37",
+        "AT-38",
+        "AT-39",
+        "AT-41"
+      ]
+    },
+    "fullRecursiveQualification": {
+      "requiresPackages": [
+        "AP-16",
+        "AP-24"
+      ],
+      "alsoRequires": "localExperimental",
+      "requiresScenarioClasses": [
+        "live"
+      ],
+      "plan": "Freeze corpus, route, allowance, comparison and success thresholds before live execution.",
+      "requiresVerifiedScenarios": [
+        "AT-40"
+      ]
+    }
+  },
+  "tasks": [
+    {
+      "id": "AP-00",
+      "title": "Existing scaffold baseline",
+      "milestone": "M0",
+      "status": "implemented",
+      "qualificationStatus": "historical_scaffold_only",
+      "dependsOn": [],
+      "owns": [
+        "packages/*",
+        "package.json",
+        "docs/archive/scaffold-handoff.md"
+      ],
+      "deliverables": [
+        "Seven strict TypeScript workspaces and pinned dependency graph.",
+        "Draft graph/result schemas, semantic DAG checks, pure readiness and 11 narrow deterministic tests.",
+        "Plan-only demo, SDK wrapper and extension status command; storage/worker interfaces only."
+      ],
+      "acceptanceScenarios": [],
+      "pitfalls": [
+        "Do not count draft interfaces as runtime implementation or predecessor tests as current evidence."
+      ],
+      "completionRule": "Only the narrow historical scaffold scope is recorded here. No current runtime or live qualification is implied.",
+      "evidence": [
+        {
+          "kind": "historical_report",
+          "source": "docs/archive/scaffold-handoff.md",
+          "sourceIdentity": {
+            "commit": null,
+            "dirtyTreeFingerprint": null,
+            "qualification": "Historical uncommitted scaffold; no retrospective exact-source fingerprint invented."
+          },
+          "commands": [
+            "npm run check",
+            "npm run demo"
+          ],
+          "observed": "11 tests passed and plan-only demo passed on Node 26.9.0 during scaffold work.",
+          "limits": [
+            "Not rerun for this documentation increment.",
+            "No live calls, durable scheduler, worker isolation or SQLite backend tested.",
+            "No hosted CI evidence."
+          ]
+        }
+      ],
+      "blockers": []
+    },
+    {
+      "id": "AP-01",
+      "title": "Versioned identities and execution/acceptance contracts",
+      "milestone": "M1",
+      "status": "in_progress",
+      "qualificationStatus": "not_run",
+      "dependsOn": [
+        "AP-00"
+      ],
+      "owns": [
+        "packages/core/src",
+        "packages/core/test",
+        "packages/core/src/index.ts",
+        "packages/core/README.md"
+      ],
+      "deliverables": [
+        "Separate wire, runtime compatibility and graph revision identities; define one canonical encoding and hash with test vectors.",
+        "Define proposal, receipt and host acceptance records; split execution state from result disposition.",
+        "Add explicit result_ready/accepted dependency conditions.",
+        "Define failure categories; migrate draft exports and demo coherently."
+      ],
+      "acceptanceScenarios": [
+        "AT-03",
+        "AT-08",
+        "AT-09"
+      ],
+      "pitfalls": [
+        "No provider calls, worker launch or database dependency in this increment.",
+        "A downstream verifier must consume provisional output without prematurely accepting its producer."
+      ],
+      "completionRule": "Integrate this package's listed deliverables and verify its owned slice of the linked scenarios with relevant npm run check and exact-source receipts. Record which assertions/classes remain for downstream packages. Package completion does not require downstream implementation and must not mark the complete shared scenario verified. Release gates require full scenario coverage.",
+      "evidence": [
+        {
+          "kind": "local_check",
+          "source": "docs/archive/2026-09-24-foundation-hardening.md",
+          "sourceIdentity": {
+            "commit": null,
+            "dirtyTreeFingerprint": "sha256:a68cfd5b4f735016125edcc9e13834c8613f03a525e67025cea3ecc6c436b845",
+            "qualification": "Uncommitted tree; fingerprint from npm run fingerprint (107 files) taken before this ledger evidence edit."
+          },
+          "environment": "macOS (Darwin 27.0.0), Node 26.9.0, TypeScript 7.0.2, 2026-09-24",
+          "evidenceClasses": [
+            "unit"
+          ],
+          "commands": [
+            "npm run check",
+            "npm run sim",
+            "npm run demo",
+            "npm ci --ignore-scripts"
+          ],
+          "observed": "npm run check exit 0 (115 tests pass, lint/boundaries/ledger/links pass); demo exit 0. Contracts cover versioned DTOs, canonical JSON/digest vectors, idempotency tuples, execution/disposition split, result_ready/accepted edges, typed validation issues, proposal/receipt/acceptance records.",
+          "limits": [
+            "Implementation complete but not yet independently reviewed or committed; status stays in_progress until review.",
+            "Requirement coverage and cross-graph checks remain AP-02.",
+            "AT-03/AT-08/AT-09 covered only for their schema/unit slices."
+          ]
+        }
+      ],
+      "blockers": []
+    },
+    {
+      "id": "AP-02",
+      "title": "Complete graph semantic admission",
+      "milestone": "M1",
+      "status": "not_started",
+      "qualificationStatus": "not_run",
+      "dependsOn": [
+        "AP-01"
+      ],
+      "owns": [
+        "packages/core/src/graph/validate.ts",
+        "packages/core/test"
+      ],
+      "deliverables": [
+        "Validate requirement coverage, artifact producers/bindings, dependency conditions, supported node kinds and required check gates.",
+        "Enforce DAG, graph/node identity, ownership, depth 0/1/2 and immutable public child contracts.",
+        "Validate cross-graph input visibility and wait ownership; preserve valid one-node plans.",
+        "Return stable typed diagnostics usable by bounded schema repair."
+      ],
+      "acceptanceScenarios": [
+        "AT-04",
+        "AT-07",
+        "AT-35"
+      ],
+      "pitfalls": [
+        "A structurally valid DAG may still omit required work or reference inaccessible evidence."
+      ],
+      "completionRule": "Integrate this package's listed deliverables and verify its owned slice of the linked scenarios with relevant npm run check and exact-source receipts. Record which assertions/classes remain for downstream packages. Package completion does not require downstream implementation and must not mark the complete shared scenario verified. Release gates require full scenario coverage.",
+      "evidence": [],
+      "blockers": []
+    },
+    {
+      "id": "AP-03",
+      "title": "Frozen grants and role policy",
+      "milestone": "M1",
+      "status": "not_started",
+      "qualificationStatus": "not_run",
+      "dependsOn": [
+        "AP-01"
+      ],
+      "owns": [
+        "packages/core/src/run/policy",
+        "packages/core/test"
+      ],
+      "deliverables": [
+        "Define planner/explorer/implementer/verifier/reviewer/integrator profiles and mechanical check/join kinds.",
+        "Resolve exact role/model/API, tool/check, path/workspace, command, delegation and budget ceilings before admission.",
+        "Prove child grants are equal or narrower; default delegation grants to none unless explicitly supplied.",
+        "Distinguish operator authority from model proposals and bind authorization provenance to effective policy."
+      ],
+      "acceptanceScenarios": [
+        "AT-04",
+        "AT-05",
+        "AT-24",
+        "AT-28",
+        "AT-35"
+      ],
+      "pitfalls": [
+        "Do not expose every configured model/check to a child by default.",
+        "Configured command profiles are not an operating-system sandbox."
+      ],
+      "completionRule": "Integrate this package's listed deliverables and verify its owned slice of the linked scenarios with relevant npm run check and exact-source receipts. Record which assertions/classes remain for downstream packages. Package completion does not require downstream implementation and must not mark the complete shared scenario verified. Release gates require full scenario coverage.",
+      "evidence": [],
+      "blockers": []
+    },
+    {
+      "id": "AP-04",
+      "title": "SQLite implementation decision and durability spike",
+      "milestone": "M1",
+      "status": "not_started",
+      "qualificationStatus": "not_run",
+      "dependsOn": [
+        "AP-01"
+      ],
+      "owns": [
+        "packages/storage",
+        "docs/decisions"
+      ],
+      "deliverables": [
+        "Write a short ADR evaluating direct SQLite versus available Pi durable storage against required transactions, fencing, migrations, backup and supported runtimes.",
+        "Prove atomic state+journal updates, competing account reservations and reopen behavior in a disposable local store.",
+        "Choose and pin one backend; settle WAL/synchronous settings and Node/platform support with measurements.",
+        "Document adapter ports and migration policy without adding a generic database framework."
+      ],
+      "acceptanceScenarios": [
+        "AT-16",
+        "AT-22"
+      ],
+      "pitfalls": [
+        "Backend remains undecided; mentioning Pi storage is not evidence it satisfies requirements.",
+        "Do not maintain a second authoritative checkpoint engine."
+      ],
+      "completionRule": "Integrate this package's listed deliverables and verify its owned slice of the linked scenarios with relevant npm run check and exact-source receipts. Record which assertions/classes remain for downstream packages. Package completion does not require downstream implementation and must not mark the complete shared scenario verified. Release gates require full scenario coverage.",
+      "evidence": [],
+      "blockers": []
+    },
+    {
+      "id": "AP-05",
+      "title": "Transactional journal, repositories and immutable artifacts",
+      "milestone": "M1",
+      "status": "not_started",
+      "qualificationStatus": "not_run",
+      "dependsOn": [
+        "AP-01",
+        "AP-04",
+        "AP-26"
+      ],
+      "owns": [
+        "packages/storage/src",
+        "packages/storage/test"
+      ],
+      "deliverables": [
+        "Implement indexed run, graph/revision, attempt, effect, event, receipt and question repositories behind application ports.",
+        "Commit decisions and journal events together with uniqueness, compare-and-swap and fencing constraints.",
+        "Install content-addressed artifacts before reference commits; validate size/hash, recover incomplete files and protect live references from GC.",
+        "Implement ordered checksum-bound migrations, consistent backup/restore and compatible reopen.",
+        "Provide disposable DB/blob fixtures and fault hooks at real persistence boundaries.",
+        "Define AttemptRecord/AttemptSegment and scoped idempotency tuples for stored attempts and requests (moved from AP-01 per decision 0004)."
+      ],
+      "acceptanceScenarios": [
+        "AT-02",
+        "AT-16",
+        "AT-17",
+        "AT-18",
+        "AT-22"
+      ],
+      "pitfalls": [
+        "No transaction may span a provider request, command or wait.",
+        "Never claim SQLite and filesystem writes share one atomic transaction."
+      ],
+      "completionRule": "Integrate this package's listed deliverables and verify its owned slice of the linked scenarios with relevant npm run check and exact-source receipts. Record which assertions/classes remain for downstream packages. Package completion does not require downstream implementation and must not mark the complete shared scenario verified. Release gates require full scenario coverage.",
+      "evidence": [],
+      "blockers": []
+    },
+    {
+      "id": "AP-06",
+      "title": "Conserved root account and request lifecycle",
+      "milestone": "M1",
+      "status": "not_started",
+      "qualificationStatus": "not_run",
+      "dependsOn": [
+        "AP-03",
+        "AP-05"
+      ],
+      "owns": [
+        "packages/core/src/run/budget",
+        "packages/storage/src/accounts",
+        "packages/storage/test"
+      ],
+      "deliverables": [
+        "Implement root envelopes, nested earmarks, completion reserve, lifetime node counts and distinct retry/repair/replan counters.",
+        "Atomically reserve, transfer and settle without double charging child slices; reject competing oversubscription.",
+        "Persist reserved/released_not_dispatched/dispatch_intent/settled/uncertain/reconciled request states with fenced idempotent transitions.",
+        "Provide a usable release path for manifest failure/cancellation proven before possible dispatch; hold ambiguous effects conservatively.",
+        "Represent unknown usage separately from zero and require qualified pricing for monetary hard caps.",
+        "Recover reserved-before-intent crashes by fencing/quiescing the old owner and proving the no-dispatch invariant; release once or require reconciliation.",
+        "Record actual observed overruns, block new admission and reconcile; qualify hard-cap claims instead of clamping usage."
+      ],
+      "acceptanceScenarios": [
+        "AT-11",
+        "AT-12",
+        "AT-13",
+        "AT-30"
+      ],
+      "pitfalls": [
+        "Direct regression for the confirmed predecessor admission-before-dispatch dead end.",
+        "Restart, compaction and child creation never create fresh root allowance."
+      ],
+      "completionRule": "Integrate this package's listed deliverables and verify its owned slice of the linked scenarios with relevant npm run check and exact-source receipts. Record which assertions/classes remain for downstream packages. Package completion does not require downstream implementation and must not mark the complete shared scenario verified. Release gates require full scenario coverage.",
+      "evidence": [],
+      "blockers": []
+    },
+    {
+      "id": "AP-07",
+      "title": "Storage-backed sequential fake-worker slice",
+      "milestone": "M1",
+      "status": "not_started",
+      "qualificationStatus": "not_run",
+      "dependsOn": [
+        "AP-02",
+        "AP-03",
+        "AP-05",
+        "AP-06",
+        "AP-26"
+      ],
+      "owns": [
+        "packages/core/src/run/scheduler",
+        "packages/core/test"
+      ],
+      "deliverables": [
+        "Wire the AP-26 reducer to injected effect ports; admission/readiness and execution/acceptance transitions come from AP-26, not a second state machine.",
+        "Run a small graph through fake sessions and real temporary persistence; checks consume result_ready, accepted consumers wait.",
+        "Persist attempt creation and dispatch intent with stable identity; reject stale revision and terminal-run dispatch.",
+        "Add bounded fair ordering, capacity accounting and explicit blocked/exhausted outcomes; start with one active worker.",
+        "Demonstrate restart of the fake-worker path without lost decisions or duplicate acceptance."
+      ],
+      "acceptanceScenarios": [
+        "AT-05",
+        "AT-08",
+        "AT-09",
+        "AT-13",
+        "AT-16",
+        "AT-18"
+      ],
+      "pitfalls": [
+        "Do not build hierarchy on top of an unverified flat state machine."
+      ],
+      "completionRule": "Integrate this package's listed deliverables and verify its owned slice of the linked scenarios with relevant npm run check and exact-source receipts. Record which assertions/classes remain for downstream packages. Package completion does not require downstream implementation and must not mark the complete shared scenario verified. Release gates require full scenario coverage.",
+      "evidence": [],
+      "blockers": []
+    },
+    {
+      "id": "AP-08",
+      "title": "Worker protocol, process control and host broker",
+      "milestone": "M2",
+      "status": "not_started",
+      "qualificationStatus": "not_run",
+      "dependsOn": [
+        "AP-03",
+        "AP-05",
+        "AP-07"
+      ],
+      "owns": [
+        "packages/worker/src/protocol",
+        "packages/worker/src/process",
+        "packages/worker/src/leases",
+        "packages/worker/src/tool-broker",
+        "packages/worker/test"
+      ],
+      "deliverables": [
+        "Create versioned bounded IPC frames with attempt, segment, sequence and fencing identity.",
+        "Implement lifecycle/heartbeat, timeout, cooperative abort and process-group termination; revoke tools on lease loss.",
+        "Broker tool requests through frozen grants; workers receive no database handle and repository commands receive no provider credentials.",
+        "Reject stale, oversized, wrong-owner and out-of-order results and settlement requests.",
+        "Prove old process quiescence or unresolved-effect blocking before handing a mutable workspace to a replacement."
+      ],
+      "acceptanceScenarios": [
+        "AT-18",
+        "AT-19",
+        "AT-21",
+        "AT-24"
+      ],
+      "pitfalls": [
+        "Lease expiry alone cannot stop an already running command or authorize overlapping writers."
+      ],
+      "completionRule": "Integrate this package's listed deliverables and verify its owned slice of the linked scenarios with relevant npm run check and exact-source receipts. Record which assertions/classes remain for downstream packages. Package completion does not require downstream implementation and must not mark the complete shared scenario verified. Release gates require full scenario coverage.",
+      "evidence": [],
+      "blockers": []
+    },
+    {
+      "id": "AP-09",
+      "title": "Closed Pi SDK execution and final-payload admission",
+      "milestone": "M2",
+      "status": "not_started",
+      "qualificationStatus": "not_run",
+      "dependsOn": [
+        "AP-06",
+        "AP-08"
+      ],
+      "owns": [
+        "packages/pi/src",
+        "packages/pi/test",
+        "packages/worker/src"
+      ],
+      "deliverables": [
+        "Implement injected closed resource loader and tools, with ambient-extension canary and instruction provenance.",
+        "Freeze exact provider/model/API route; reject unsupported routes and disable unaccounted hidden retries/fallback.",
+        "Prove a pinned-SDK hook observes final serialized payload before transport; enforce request/context/output limits there.",
+        "Bind dispatch intents and usage receipts to root accounting; handle pre-dispatch release and uncertain completion distinctly.",
+        "Support prompt/abort/dispose and minimal bounded task packets with complete tool exchanges; use fake provider streams for qualification."
+      ],
+      "acceptanceScenarios": [
+        "AT-11",
+        "AT-12",
+        "AT-27",
+        "AT-28",
+        "AT-29",
+        "AT-30"
+      ],
+      "pitfalls": [
+        "If the pinned SDK cannot enforce the request boundary, block live capability and record the compatibility gap.",
+        "Do not substitute a byte estimate for a claimed exact tokenizer bound."
+      ],
+      "completionRule": "Integrate this package's listed deliverables and verify its owned slice of the linked scenarios with relevant npm run check and exact-source receipts. Record which assertions/classes remain for downstream packages. Package completion does not require downstream implementation and must not mark the complete shared scenario verified. Release gates require full scenario coverage.",
+      "evidence": [],
+      "blockers": []
+    },
+    {
+      "id": "AP-10",
+      "title": "Durable intake, automatic planning and clarification",
+      "milestone": "M2",
+      "status": "not_started",
+      "qualificationStatus": "not_run",
+      "dependsOn": [
+        "AP-02",
+        "AP-07",
+        "AP-09",
+        "AP-11"
+      ],
+      "owns": [
+        "packages/core/src/run/intake",
+        "packages/core/src/run/planning",
+        "packages/core/test"
+      ],
+      "deliverables": [
+        "Bind the reproducible AP-11 baseline (including authorized staged/unstaged/untracked content), root objective, immutable criteria, request identity and root account durably before planning.",
+        "Collect repository instructions/context with provenance; planner proposes a small graph through semantic admission.",
+        "Persist accepted plan and planner charges before publication; deduplicate full request content and reject key conflicts.",
+        "Implement structured question/answer records and planner continuation within the same run and account.",
+        "Permit one-node plans and bounded invalid-output repair without weakening root criteria.",
+        "Define RunSpec and RunAmendment for durable intake and operator steering (moved from AP-01 per decision 0004)."
+      ],
+      "acceptanceScenarios": [
+        "AT-01",
+        "AT-02",
+        "AT-04",
+        "AT-06",
+        "AT-07",
+        "AT-33"
+      ],
+      "pitfalls": [
+        "Clarification must not create a new run or reset planner allowance."
+      ],
+      "completionRule": "Integrate this package's listed deliverables and verify its owned slice of the linked scenarios with relevant npm run check and exact-source receipts. Record which assertions/classes remain for downstream packages. Package completion does not require downstream implementation and must not mark the complete shared scenario verified. Release gates require full scenario coverage.",
+      "evidence": [],
+      "blockers": []
+    },
+    {
+      "id": "AP-11",
+      "title": "Dirty baselines, isolated workspaces and effect receipts",
+      "milestone": "M2",
+      "status": "not_started",
+      "qualificationStatus": "not_run",
+      "dependsOn": [
+        "AP-05",
+        "AP-08"
+      ],
+      "owns": [
+        "packages/worker/src/workspace",
+        "packages/worker/src/commands",
+        "packages/worker/test"
+      ],
+      "deliverables": [
+        "Capture staged/unstaged/untracked content, deletions, modes and symlinks with explicit secret/ignored-file exclusions.",
+        "Create identified task and integration workspaces; implement one writer lease per workspace and immutable reader snapshots.",
+        "Broker file edits against expected preimages; journal mutation/command intent and reconcile observable postimages.",
+        "Run configured checks/commands with argument arrays, environment policy, timeout, bounded output and resource accounting.",
+        "Return candidate artifacts bound to base fingerprint; preserve operator checkout and existing edits."
+      ],
+      "acceptanceScenarios": [
+        "AT-01",
+        "AT-20",
+        "AT-23",
+        "AT-24"
+      ],
+      "pitfalls": [
+        "An isolated worktree does not confine arbitrary shell execution.",
+        "Do not reset/stash the operator's work or replay ambiguous commands."
+      ],
+      "completionRule": "Integrate this package's listed deliverables and verify its owned slice of the linked scenarios with relevant npm run check and exact-source receipts. Record which assertions/classes remain for downstream packages. Package completion does not require downstream implementation and must not mark the complete shared scenario verified. Release gates require full scenario coverage.",
+      "evidence": [],
+      "blockers": []
+    },
+    {
+      "id": "AP-12",
+      "title": "Trusted check receipts, independent review and acceptance",
+      "milestone": "M2",
+      "status": "not_started",
+      "qualificationStatus": "not_run",
+      "dependsOn": [
+        "AP-03",
+        "AP-07",
+        "AP-09",
+        "AP-11"
+      ],
+      "owns": [
+        "packages/core/src/run/evidence.ts",
+        "packages/core/src/run/acceptance",
+        "packages/worker/src/commands",
+        "packages/core/test"
+      ],
+      "deliverables": [
+        "Execute host check profiles and distinguish actual exit status from model claims or parsed test-count observations.",
+        "Bind check and review receipts to exact inputs, candidate tree, profile, environment and tool identity.",
+        "Implement independent review with a validated assessment proposal; only host policy records acceptance.",
+        "Permit interim implementer-requested checks as feedback without removing mandatory final independent gates.",
+        "Invalidate stale receipts and ensure result_ready gates allow verification while accepted consumers remain blocked."
+      ],
+      "acceptanceScenarios": [
+        "AT-05",
+        "AT-08",
+        "AT-09",
+        "AT-10",
+        "AT-14",
+        "AT-26"
+      ],
+      "pitfalls": [
+        "No model 'pass' string, worker exit or isolated check alone proves acceptance."
+      ],
+      "completionRule": "Integrate this package's listed deliverables and verify its owned slice of the linked scenarios with relevant npm run check and exact-source receipts. Record which assertions/classes remain for downstream packages. Package completion does not require downstream implementation and must not mark the complete shared scenario verified. Release gates require full scenario coverage.",
+      "evidence": [],
+      "blockers": []
+    },
+    {
+      "id": "AP-13",
+      "title": "Serial integration and reviewable delivery",
+      "milestone": "M2",
+      "status": "not_started",
+      "qualificationStatus": "not_run",
+      "dependsOn": [
+        "AP-11",
+        "AP-12"
+      ],
+      "owns": [
+        "packages/worker/src/integration",
+        "packages/core/src/run/acceptance",
+        "packages/worker/test"
+      ],
+      "deliverables": [
+        "Apply candidate patches serially to the run integration workspace with base/preimage checks.",
+        "Persist conflicts and resolution outcomes while preserving original candidates and operator work.",
+        "Run required checks and review on the combined tree before root acceptance.",
+        "Deliver a reviewable patch/artifact and evidence report with exact baseline/result identity; support branch delivery only under explicit commit policy.",
+        "Keep checkout application, commits, pushes and publication behind their existing authorization boundary."
+      ],
+      "acceptanceScenarios": [
+        "AT-10",
+        "AT-23",
+        "AT-25",
+        "AT-26"
+      ],
+      "pitfalls": [
+        "Individually verified siblings may conflict or fail after integration."
+      ],
+      "completionRule": "Integrate this package's listed deliverables and verify its owned slice of the linked scenarios with relevant npm run check and exact-source receipts. Record which assertions/classes remain for downstream packages. Package completion does not require downstream implementation and must not mark the complete shared scenario verified. Release gates require full scenario coverage.",
+      "evidence": [],
+      "blockers": []
+    },
+    {
+      "id": "AP-14",
+      "title": "On-demand supervisor, local IPC and restart controls",
+      "milestone": "M2",
+      "status": "not_started",
+      "qualificationStatus": "not_run",
+      "dependsOn": [
+        "AP-08",
+        "AP-10",
+        "AP-13"
+      ],
+      "owns": [
+        "packages/cli/src/composition",
+        "packages/cli/src/supervisor",
+        "packages/cli/src/ipc",
+        "packages/core/src/run/recovery",
+        "packages/cli/test"
+      ],
+      "deliverables": [
+        "Compose one durable supervisor per canonical repository/store with protected versioned local IPC and same-user access checks.",
+        "Support attach/detach and idle exit while preserving tasks when Pi UI disconnects.",
+        "Reconcile leases, requests, commands and artifacts before replacement dispatch after restart.",
+        "Persist pause/resume/cancel/steer commands idempotently; pause stops admission, cancellation settles descendants/effects before terminal outcome.",
+        "Export deterministic fake-reasoning full coding fixtures and process-kill tests."
+      ],
+      "acceptanceScenarios": [
+        "AT-11",
+        "AT-18",
+        "AT-19",
+        "AT-20",
+        "AT-21",
+        "AT-34",
+        "AT-41"
+      ],
+      "pitfalls": [
+        "Do not turn a UI process into a second scheduler or reassign live writers on time alone."
+      ],
+      "completionRule": "Integrate this package's listed deliverables and verify its owned slice of the linked scenarios with relevant npm run check and exact-source receipts. Record which assertions/classes remain for downstream packages. Package completion does not require downstream implementation and must not mark the complete shared scenario verified. Release gates require full scenario coverage.",
+      "evidence": [],
+      "blockers": []
+    },
+    {
+      "id": "AP-15",
+      "title": "Pi graph mode, setup and operator CLI",
+      "milestone": "M2",
+      "status": "not_started",
+      "qualificationStatus": "not_run",
+      "dependsOn": [
+        "AP-10",
+        "AP-14"
+      ],
+      "owns": [
+        "packages/pi/src/extension.ts",
+        "packages/cli/src/commands",
+        "packages/pi/test",
+        "README.md"
+      ],
+      "deliverables": [
+        "Implement on/off/status/pause/resume/cancel/inspect and CLI equivalents against supervisor IPC.",
+        "Route only intended operator tasks; preserve busy drafts and restore durable run status without task resubmission.",
+        "Bind clarification answers and steering to pending durable identities, preserving current run budgets.",
+        "Discover repository checks as inert candidates; show resolved scope/model/check/budget policy and reuse existing authorization.",
+        "Display progress, blocked reasons and final evidence; keep off separate from cancel."
+      ],
+      "acceptanceScenarios": [
+        "AT-01",
+        "AT-32",
+        "AT-33",
+        "AT-34",
+        "AT-41"
+      ],
+      "pitfalls": [
+        "Do not route assistant/tool output as user intent or ask repeatedly for already authorized checks."
+      ],
+      "completionRule": "Integrate this package's listed deliverables and verify its owned slice of the linked scenarios with relevant npm run check and exact-source receipts. Record which assertions/classes remain for downstream packages. Package completion does not require downstream implementation and must not mark the complete shared scenario verified. Release gates require full scenario coverage.",
+      "evidence": [],
+      "blockers": []
+    },
+    {
+      "id": "AP-16",
+      "title": "Small flat-coding live baseline",
+      "milestone": "M3",
+      "status": "not_started",
+      "qualificationStatus": "not_run",
+      "dependsOn": [
+        "AP-09",
+        "AP-13",
+        "AP-15"
+      ],
+      "owns": [
+        "docs/evaluation",
+        "packages/cli/test/live"
+      ],
+      "deliverables": [
+        "Prepare a small versioned corpus, single-Pi-session comparison, exact routes, cost/timeout ceilings and success metrics before traffic.",
+        "Use explicit existing or new operator authorization for live expenditure; record unavailable credentials as a qualification prerequisite.",
+        "Run the durable flat path against the approved corpus and retain concise success/failure/cost/latency receipts.",
+        "Record unknown usage, skips and provider effects honestly; use findings to adjust design before advanced optimization."
+      ],
+      "acceptanceScenarios": [
+        "AT-40"
+      ],
+      "pitfalls": [
+        "Optional live qualification does not block independent offline feature work.",
+        "A large green deterministic suite does not establish useful autonomous coding."
+      ],
+      "completionRule": "Integrate this package's listed deliverables and verify its owned slice of the linked scenarios with relevant npm run check and exact-source receipts. Record which assertions/classes remain for downstream packages. Package completion does not require downstream implementation and must not mark the complete shared scenario verified. Release gates require full scenario coverage.",
+      "evidence": [],
+      "blockers": []
+    },
+    {
+      "id": "AP-17",
+      "title": "Bounded repairs, investigations and graph revision loops",
+      "milestone": "M4",
+      "status": "not_started",
+      "qualificationStatus": "not_run",
+      "dependsOn": [
+        "AP-10",
+        "AP-12",
+        "AP-14"
+      ],
+      "owns": [
+        "packages/core/src/run/loops",
+        "packages/core/src/run/planning",
+        "packages/core/test"
+      ],
+      "deliverables": [
+        "Separate transport/schema/semantic repair, investigation, continuation and replan counters with global root debits.",
+        "Persist hypothesis, expected observation and progress fingerprint; stop unchanged failures and exhausted loops.",
+        "Admit immutable graph patches with expected-revision compare-and-swap; retain previous contracts and evidence.",
+        "Invalidate affected dependents and preserve still-valid siblings; no refund of lifetime node or spent budget.",
+        "Classify repairable failures versus policy denial, root exhaustion and uncertain effects.",
+        "Define GraphPatch for immutable graph revision admission (moved from AP-01 per decision 0004)."
+      ],
+      "acceptanceScenarios": [
+        "AT-10",
+        "AT-15",
+        "AT-39"
+      ],
+      "pitfalls": [
+        "No cyclic dependency edges, reset-on-restart counters or catch-all 'blocked means repair' policy."
+      ],
+      "completionRule": "Integrate this package's listed deliverables and verify its owned slice of the linked scenarios with relevant npm run check and exact-source receipts. Record which assertions/classes remain for downstream packages. Package completion does not require downstream implementation and must not mark the complete shared scenario verified. Release gates require full scenario coverage.",
+      "evidence": [],
+      "blockers": []
+    },
+    {
+      "id": "AP-18",
+      "title": "Hierarchical spawn admission and durable ownership",
+      "milestone": "M4",
+      "status": "not_started",
+      "qualificationStatus": "not_run",
+      "dependsOn": [
+        "AP-02",
+        "AP-03",
+        "AP-05",
+        "AP-06",
+        "AP-07",
+        "AP-17"
+      ],
+      "owns": [
+        "packages/core/src/run/hierarchy",
+        "packages/storage/src/graphs",
+        "packages/storage/src/accounts",
+        "packages/core/test"
+      ],
+      "deliverables": [
+        "Atomically admit child identity, owner binding, narrowed grants, input/output contracts and root earmark.",
+        "Enforce root0/child1/grandchild2 and per-node/lifetime/global bounds, including requested-but-unplanned children.",
+        "Deduplicate spawn keys bound to full content; preserve identity across restart and plan revision.",
+        "Reject ancestor wait cycles and ownership-changing patches with active descendants.",
+        "Create durable child planning/question records under the same root account.",
+        "Define SpawnRequest for child graph admission (moved from AP-01 per decision 0004)."
+      ],
+      "acceptanceScenarios": [
+        "AT-13",
+        "AT-35",
+        "AT-39"
+      ],
+      "pitfalls": [
+        "No new budget or expanded configured-model/check catalog on delegation."
+      ],
+      "completionRule": "Integrate this package's listed deliverables and verify its owned slice of the linked scenarios with relevant npm run check and exact-source receipts. Record which assertions/classes remain for downstream packages. Package completion does not require downstream implementation and must not mark the complete shared scenario verified. Release gates require full scenario coverage.",
+      "evidence": [],
+      "blockers": []
+    },
+    {
+      "id": "AP-19",
+      "title": "Parent suspension, child execution and fresh continuation",
+      "milestone": "M4",
+      "status": "not_started",
+      "qualificationStatus": "not_run",
+      "dependsOn": [
+        "AP-08",
+        "AP-09",
+        "AP-12",
+        "AP-14",
+        "AP-18"
+      ],
+      "owns": [
+        "packages/core/src/run/hierarchy",
+        "packages/pi/src/continuation",
+        "packages/storage/src/graphs",
+        "packages/core/test"
+      ],
+      "deliverables": [
+        "Persist supported tool-exchange boundary, suspension record and continuation payload before releasing parent resources.",
+        "Release model/process permits and conflicting writer leases; run descendants through the existing scheduler.",
+        "Verify child outputs, persist immutable typed outcomes and deliver/consume them idempotently.",
+        "Resume a fresh accounted parent segment with refreshed grants/source and supported history.",
+        "Test crashes before/after suspension, completion, delivery and consumption without replaying parent edits or charges.",
+        "Define ChildResult as the typed terminal outcome delivered to the owning parent node (moved from AP-01 per decision 0004)."
+      ],
+      "acceptanceScenarios": [
+        "AT-18",
+        "AT-36",
+        "AT-37"
+      ],
+      "pitfalls": [
+        "A parked parent must not hold every slot needed by its children."
+      ],
+      "completionRule": "Integrate this package's listed deliverables and verify its owned slice of the linked scenarios with relevant npm run check and exact-source receipts. Record which assertions/classes remain for downstream packages. Package completion does not require downstream implementation and must not mark the complete shared scenario verified. Release gates require full scenario coverage.",
+      "evidence": [],
+      "blockers": []
+    },
+    {
+      "id": "AP-20",
+      "title": "Grandchildren, global concurrency and subtree cancellation",
+      "milestone": "M4",
+      "status": "not_started",
+      "qualificationStatus": "not_run",
+      "dependsOn": [
+        "AP-13",
+        "AP-17",
+        "AP-18",
+        "AP-19"
+      ],
+      "owns": [
+        "packages/core/src/run/scheduler",
+        "packages/core/src/run/hierarchy",
+        "packages/core/src/run/recovery",
+        "packages/core/test"
+      ],
+      "deliverables": [
+        "Apply the same spawn/suspend/delivery flow to depth2 and reject any deeper request.",
+        "Enable bounded concurrent immutable readers and isolated writers with fair global permits.",
+        "Maintain one account and completion reserve across all generations, including suspended and not-yet-planned children.",
+        "Propagate cancellation through requested/admitted/running descendants and settle effects before root termination.",
+        "Demonstrate a recursive run integrating descendants without slot deadlock or overlapping workspace authority."
+      ],
+      "acceptanceScenarios": [
+        "AT-13",
+        "AT-21",
+        "AT-24",
+        "AT-25",
+        "AT-35",
+        "AT-36",
+        "AT-37"
+      ],
+      "pitfalls": [
+        "Nested workers do not own private schedulers or private retry budgets."
+      ],
+      "completionRule": "Integrate this package's listed deliverables and verify its owned slice of the linked scenarios with relevant npm run check and exact-source receipts. Record which assertions/classes remain for downstream packages. Package completion does not require downstream implementation and must not mark the complete shared scenario verified. Release gates require full scenario coverage.",
+      "evidence": [],
+      "blockers": []
+    },
+    {
+      "id": "AP-21",
+      "title": "Nested boundary failure, clarification and revision recovery",
+      "milestone": "M4",
+      "status": "not_started",
+      "qualificationStatus": "not_run",
+      "dependsOn": [
+        "AP-17",
+        "AP-19",
+        "AP-20"
+      ],
+      "owns": [
+        "packages/core/src/run/hierarchy",
+        "packages/core/src/run/loops",
+        "packages/core/src/run/recovery",
+        "packages/core/test"
+      ],
+      "deliverables": [
+        "Route child/grandchild check or review failure to typed bounded recovery at its full graph/node path.",
+        "Support questions and duplicate answers in child planning, execution and parent continuation without changing run identity.",
+        "Allow policy-approved parent adaptation after settled child failure while retaining valid sibling outputs.",
+        "Test nested restart with active revisions, exhausted budget, cancellation and uncertain effects.",
+        "Complete recursive demonstration including a repairable child-boundary failure and final integrated checks."
+      ],
+      "acceptanceScenarios": [
+        "AT-15",
+        "AT-18",
+        "AT-33",
+        "AT-37",
+        "AT-38",
+        "AT-39"
+      ],
+      "pitfalls": [
+        "Legacy child-boundary recovery is incomplete; do not copy generic blocked-to-finish routing."
+      ],
+      "completionRule": "Integrate this package's listed deliverables and verify its owned slice of the linked scenarios with relevant npm run check and exact-source receipts. Record which assertions/classes remain for downstream packages. Package completion does not require downstream implementation and must not mark the complete shared scenario verified. Release gates require full scenario coverage.",
+      "evidence": [],
+      "blockers": []
+    },
+    {
+      "id": "AP-22",
+      "title": "Artifact retrieval and tested context reduction",
+      "milestone": "M5",
+      "status": "not_started",
+      "qualificationStatus": "not_run",
+      "dependsOn": [
+        "AP-09",
+        "AP-10",
+        "AP-19"
+      ],
+      "owns": [
+        "packages/pi/src/continuation",
+        "packages/core/src/run/context",
+        "packages/storage/src/artifacts",
+        "packages/pi/test"
+      ],
+      "deliverables": [
+        "Implement bounded artifact/source retrieval with provenance and immutable reference checks.",
+        "Preserve root criteria, grants, complete tool exchanges and relevant current source in task/continuation packets.",
+        "Define one compaction owner and explicit omission manifest; claimed reversible reductions require retrievable immutable bytes.",
+        "Test narrowing or typed blocking when mandatory context cannot fit, still enforcing final-payload admission.",
+        "Track route/tool/prompt compatibility; defer speculative cache optimization and prompt search."
+      ],
+      "acceptanceScenarios": [
+        "AT-27",
+        "AT-29",
+        "AT-31",
+        "AT-37"
+      ],
+      "pitfalls": [
+        "An omission log is not a reversible summary unless it points to retained content."
+      ],
+      "completionRule": "Integrate this package's listed deliverables and verify its owned slice of the linked scenarios with relevant npm run check and exact-source receipts. Record which assertions/classes remain for downstream packages. Package completion does not require downstream implementation and must not mark the complete shared scenario verified. Release gates require full scenario coverage.",
+      "evidence": [],
+      "blockers": []
+    },
+    {
+      "id": "AP-23",
+      "title": "Run inspection, retention and evidence export",
+      "milestone": "M5",
+      "status": "not_started",
+      "qualificationStatus": "not_run",
+      "dependsOn": [
+        "AP-05",
+        "AP-14",
+        "AP-20",
+        "AP-21"
+      ],
+      "owns": [
+        "packages/cli/src/inspection",
+        "packages/storage/src/retention",
+        "packages/pi/src/extension/progress",
+        "docs/operations"
+      ],
+      "deliverables": [
+        "Expose graph ownership, revision, attempt/segment, acceptance, budget, wait reason and effect reconciliation views.",
+        "Export redacted bounded evidence bundles with source identity and versioned receipts; keep private transcripts optional.",
+        "Use indexed projections for hot paths and rebuild them from authoritative records.",
+        "Implement documented retention protecting active artifacts/deliveries/unresolved effects; test backup/restore with retained references.",
+        "Document blocked-run recovery, reconciliation, cleanup and platform limitations without exposing secrets."
+      ],
+      "acceptanceScenarios": [
+        "AT-16",
+        "AT-17",
+        "AT-18",
+        "AT-22",
+        "AT-30",
+        "AT-38"
+      ],
+      "pitfalls": [
+        "Avoid scanning all history on every dispatch and avoid logs masquerading as authoritative state."
+      ],
+      "completionRule": "Integrate this package's listed deliverables and verify its owned slice of the linked scenarios with relevant npm run check and exact-source receipts. Record which assertions/classes remain for downstream packages. Package completion does not require downstream implementation and must not mark the complete shared scenario verified. Release gates require full scenario coverage.",
+      "evidence": [],
+      "blockers": []
+    },
+    {
+      "id": "AP-24",
+      "title": "Full recursive live effectiveness qualification",
+      "milestone": "M6",
+      "status": "not_started",
+      "qualificationStatus": "not_run",
+      "dependsOn": [
+        "AP-15",
+        "AP-16",
+        "AP-20",
+        "AP-21",
+        "AP-22",
+        "AP-23",
+        "AP-25"
+      ],
+      "owns": [
+        "docs/evaluation",
+        "packages/cli/test/live"
+      ],
+      "deliverables": [
+        "Freeze the operator-approved recursive corpus, route set, limits, baseline comparison and acceptance thresholds before execution.",
+        "Include useful child/grandchild delegation, repairable boundary failure, integration and controlled recovery cases.",
+        "Compare accepted outcome quality, total accounted usage/cost, uncertainty, latency and intervention against the flat/single-session baseline.",
+        "Record failures and skips individually, qualify supported routes and avoid universal performance claims.",
+        "Publish a concise release qualification decision referencing exact source and evidence; no automatic deployment/publication."
+      ],
+      "acceptanceScenarios": [
+        "AT-40"
+      ],
+      "pitfalls": [
+        "A passing transport probe cannot qualify multi-step coding effectiveness."
+      ],
+      "completionRule": "Integrate this package's listed deliverables and verify its owned slice of the linked scenarios with relevant npm run check and exact-source receipts. Record which assertions/classes remain for downstream packages. Package completion does not require downstream implementation and must not mark the complete shared scenario verified. Release gates require full scenario coverage.",
+      "evidence": [],
+      "blockers": []
+    },
+    {
+      "id": "AP-25",
+      "title": "Packaging, CI and supported-platform qualification",
+      "milestone": "M6",
+      "status": "not_started",
+      "qualificationStatus": "not_run",
+      "dependsOn": [
+        "AP-09",
+        "AP-15",
+        "AP-23"
+      ],
+      "owns": [
+        ".github/workflows",
+        "package.json",
+        "packages/*/package.json",
+        "docs/operations",
+        "README.md"
+      ],
+      "deliverables": [
+        "Validate clean locked install, package exports and declared Node/Pi compatibility on each supported OS.",
+        "Run deterministic/fault/offline-SDK checks in CI with live jobs explicit and bounded.",
+        "Smoke-test actual CLI and Pi extension attach against the same supervisor; document process/socket/worktree differences.",
+        "Provide configuration/version upgrades, migration/backup instructions, diagnostics and release evidence.",
+        "Prepare reviewable package artifacts; registry publication or deployment needs separate existing authorization."
+      ],
+      "acceptanceScenarios": [
+        "AT-22",
+        "AT-32",
+        "AT-41"
+      ],
+      "pitfalls": [
+        "Configured CI is not a hosted pass, and one macOS run does not prove other OS support."
+      ],
+      "completionRule": "Integrate this package's listed deliverables and verify its owned slice of the linked scenarios with relevant npm run check and exact-source receipts. Record which assertions/classes remain for downstream packages. Package completion does not require downstream implementation and must not mark the complete shared scenario verified. Release gates require full scenario coverage.",
+      "evidence": [],
+      "blockers": []
+    },
+    {
+      "id": "AP-26",
+      "title": "Pure reducer and deterministic simulation",
+      "milestone": "M1",
+      "status": "in_progress",
+      "qualificationStatus": "not_run",
+      "dependsOn": [
+        "AP-01"
+      ],
+      "owns": [
+        "packages/core/src/run/state.ts",
+        "packages/core/src/run/commands.ts",
+        "packages/core/src/run/decide.ts",
+        "packages/core/src/run/replay.ts",
+        "packages/core/src/run/events.ts",
+        "packages/core/test/sim",
+        "packages/core/test"
+      ],
+      "deliverables": [
+        "Total pure decide(state, event) -> { state, commands, rejection? } for one flat graph: dispatch, proposal, check receipt, accept/reject, bounded retry, cancellation, lease expiry.",
+        "Versioned journal event schemas in contracts; engine-internal command vocabulary; replay(events) as a fold over decide.",
+        "Stale, duplicate and out-of-order events rejected with typed reasons, never thrown or applied twice.",
+        "Seeded deterministic simulation with fake clock and fake worker asserting invariants after every step; fixed seeds in npm run check, longer sweep in npm run sim."
+      ],
+      "acceptanceScenarios": [
+        "AT-08",
+        "AT-09",
+        "AT-13",
+        "AT-16"
+      ],
+      "pitfalls": [
+        "No database, process or provider dependency.",
+        "Hierarchy, budgets and suspension must extend this reducer later, not fork it."
+      ],
+      "completionRule": "Integrate this package's listed deliverables and verify its owned slice of the linked scenarios with relevant npm run check and exact-source receipts. Record which assertions/classes remain for downstream packages. Package completion does not require downstream implementation and must not mark the complete shared scenario verified. Release gates require full scenario coverage.",
+      "evidence": [
+        {
+          "kind": "local_check",
+          "source": "docs/archive/2026-09-24-foundation-hardening.md",
+          "sourceIdentity": {
+            "commit": null,
+            "dirtyTreeFingerprint": "sha256:a68cfd5b4f735016125edcc9e13834c8613f03a525e67025cea3ecc6c436b845",
+            "qualification": "Uncommitted tree; fingerprint from npm run fingerprint (107 files) taken before this ledger evidence edit."
+          },
+          "environment": "macOS (Darwin 27.0.0), Node 26.9.0, TypeScript 7.0.2, 2026-09-24",
+          "evidenceClasses": [
+            "unit"
+          ],
+          "commands": [
+            "npm run check",
+            "npm run sim",
+            "npm run demo",
+            "npm ci --ignore-scripts"
+          ],
+          "observed": "npm run check exit 0 incl. 200-seed simulation; npm run sim 5000/5000 seeds; 20000-seed sweep passed after review fixes. Hardened simulation failed 3655/20000 seeds on the pre-fix reducer (double acceptance decision; cancel dropping outstanding evaluation).",
+          "limits": [
+            "Not yet independently reviewed or committed.",
+            "Flat graph only; no hierarchy, budgets, suspension or invalidation cascade.",
+            "No storage-backed replay (AP-05/AP-07)."
+          ]
+        }
+      ],
+      "blockers": []
+    },
+    {
+      "id": "AP-27",
+      "title": "Repository gates",
+      "milestone": "M1",
+      "status": "in_progress",
+      "qualificationStatus": "not_run",
+      "dependsOn": [
+        "AP-00"
+      ],
+      "owns": [
+        "scripts",
+        "biome.json",
+        ".claude/settings.json",
+        "package.json"
+      ],
+      "deliverables": [
+        "Pinned Biome format/lint gate matching existing style.",
+        "Import boundary enforcement via Biome rules in biome.json: noUndeclaredDependencies restricts the Pi SDK to pi and keeps cli undeclared everywhere; noRestrictedImports overrides scope core/src to zod and node:crypto and pi to the @auto-pi-lot/core/session subpath; noImportCycles (ignoreTypes: false) forbids import cycles (decision 0004).",
+        "Ledger validator (IDs, references, acyclic AP DAG, evidence required for implemented, paths exist) and relative-link checker, each with fixture tests.",
+        "Source fingerprint script for exact-source evidence while the tree is uncommitted.",
+        "npm run check runs build, typecheck, lint, ledger, links and tests; Claude Code Stop hook runs it."
+      ],
+      "acceptanceScenarios": [],
+      "pitfalls": [
+        "Gates must fail on seeded violations, not only pass on the current tree.",
+        "Local gates only; supported-platform CI qualification stays in AP-25."
+      ],
+      "completionRule": "Integrate this package's listed deliverables and verify its owned slice of the linked scenarios with relevant npm run check and exact-source receipts. Record which assertions/classes remain for downstream packages. Package completion does not require downstream implementation and must not mark the complete shared scenario verified. Release gates require full scenario coverage.",
+      "evidence": [
+        {
+          "kind": "local_check",
+          "source": "docs/archive/2026-09-24-foundation-hardening.md",
+          "sourceIdentity": {
+            "commit": null,
+            "dirtyTreeFingerprint": "sha256:a68cfd5b4f735016125edcc9e13834c8613f03a525e67025cea3ecc6c436b845",
+            "qualification": "Uncommitted tree; fingerprint from npm run fingerprint (107 files) taken before this ledger evidence edit."
+          },
+          "environment": "macOS (Darwin 27.0.0), Node 26.9.0, TypeScript 7.0.2, 2026-09-24",
+          "evidenceClasses": [
+            "static_inspection",
+            "unit"
+          ],
+          "commands": [
+            "npm run check",
+            "npm run sim",
+            "npm run demo",
+            "npm ci --ignore-scripts"
+          ],
+          "observed": "npm run check exit 0 running build, typecheck:test, test:unit, lint, boundaries, ledger, links; gate fixture tests pass; Stop hook blocks (exit 2) on failing check.",
+          "limits": [
+            "Not yet independently reviewed or committed.",
+            "Hosted CI not run.",
+            "Boundary scanner is regex-based; disclosed limits in scripts/check-boundaries.ts."
+          ]
+        }
+      ],
+      "blockers": []
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "AT-01",
+      "status": "unimplemented",
+      "workPackages": [
+        "AP-10",
+        "AP-15",
+        "AP-11"
+      ],
+      "evidence": [],
+      "qualifications": []
+    },
+    {
+      "id": "AT-02",
+      "status": "unimplemented",
+      "workPackages": [
+        "AP-05",
+        "AP-10"
+      ],
+      "evidence": [],
+      "qualifications": []
+    },
+    {
+      "id": "AT-03",
+      "status": "unimplemented",
+      "workPackages": [
+        "AP-01"
+      ],
+      "evidence": [],
+      "qualifications": []
+    },
+    {
+      "id": "AT-04",
+      "status": "unimplemented",
+      "workPackages": [
+        "AP-02",
+        "AP-03",
+        "AP-10"
+      ],
+      "evidence": [],
+      "qualifications": []
+    },
+    {
+      "id": "AT-05",
+      "status": "unimplemented",
+      "workPackages": [
+        "AP-03",
+        "AP-07",
+        "AP-12"
+      ],
+      "evidence": [],
+      "qualifications": []
+    },
+    {
+      "id": "AT-06",
+      "status": "unimplemented",
+      "workPackages": [
+        "AP-10"
+      ],
+      "evidence": [],
+      "qualifications": []
+    },
+    {
+      "id": "AT-07",
+      "status": "unimplemented",
+      "workPackages": [
+        "AP-02",
+        "AP-10"
+      ],
+      "evidence": [],
+      "qualifications": []
+    },
+    {
+      "id": "AT-08",
+      "status": "unimplemented",
+      "workPackages": [
+        "AP-01",
+        "AP-07",
+        "AP-12"
+      ],
+      "evidence": [],
+      "qualifications": []
+    },
+    {
+      "id": "AT-09",
+      "status": "unimplemented",
+      "workPackages": [
+        "AP-01",
+        "AP-07",
+        "AP-12"
+      ],
+      "evidence": [],
+      "qualifications": []
+    },
+    {
+      "id": "AT-10",
+      "status": "unimplemented",
+      "workPackages": [
+        "AP-12",
+        "AP-13",
+        "AP-17"
+      ],
+      "evidence": [],
+      "qualifications": []
+    },
+    {
+      "id": "AT-11",
+      "status": "unimplemented",
+      "workPackages": [
+        "AP-06",
+        "AP-09",
+        "AP-14"
+      ],
+      "evidence": [],
+      "qualifications": []
+    },
+    {
+      "id": "AT-12",
+      "status": "unimplemented",
+      "workPackages": [
+        "AP-06",
+        "AP-09"
+      ],
+      "evidence": [],
+      "qualifications": []
+    },
+    {
+      "id": "AT-13",
+      "status": "unimplemented",
+      "workPackages": [
+        "AP-06",
+        "AP-07",
+        "AP-18",
+        "AP-20"
+      ],
+      "evidence": [],
+      "qualifications": []
+    },
+    {
+      "id": "AT-14",
+      "status": "unimplemented",
+      "workPackages": [
+        "AP-12"
+      ],
+      "evidence": [],
+      "qualifications": []
+    },
+    {
+      "id": "AT-15",
+      "status": "unimplemented",
+      "workPackages": [
+        "AP-17",
+        "AP-21"
+      ],
+      "evidence": [],
+      "qualifications": []
+    },
+    {
+      "id": "AT-16",
+      "status": "unimplemented",
+      "workPackages": [
+        "AP-04",
+        "AP-05",
+        "AP-07",
+        "AP-23"
+      ],
+      "evidence": [],
+      "qualifications": []
+    },
+    {
+      "id": "AT-17",
+      "status": "unimplemented",
+      "workPackages": [
+        "AP-05",
+        "AP-23"
+      ],
+      "evidence": [],
+      "qualifications": []
+    },
+    {
+      "id": "AT-18",
+      "status": "unimplemented",
+      "workPackages": [
+        "AP-05",
+        "AP-07",
+        "AP-08",
+        "AP-14",
+        "AP-19",
+        "AP-21",
+        "AP-23"
+      ],
+      "evidence": [],
+      "qualifications": []
+    },
+    {
+      "id": "AT-19",
+      "status": "unimplemented",
+      "workPackages": [
+        "AP-08",
+        "AP-14"
+      ],
+      "evidence": [],
+      "qualifications": []
+    },
+    {
+      "id": "AT-20",
+      "status": "unimplemented",
+      "workPackages": [
+        "AP-11",
+        "AP-14"
+      ],
+      "evidence": [],
+      "qualifications": []
+    },
+    {
+      "id": "AT-21",
+      "status": "unimplemented",
+      "workPackages": [
+        "AP-08",
+        "AP-14",
+        "AP-20"
+      ],
+      "evidence": [],
+      "qualifications": []
+    },
+    {
+      "id": "AT-22",
+      "status": "unimplemented",
+      "workPackages": [
+        "AP-04",
+        "AP-05",
+        "AP-23",
+        "AP-25"
+      ],
+      "evidence": [],
+      "qualifications": []
+    },
+    {
+      "id": "AT-23",
+      "status": "unimplemented",
+      "workPackages": [
+        "AP-11",
+        "AP-13"
+      ],
+      "evidence": [],
+      "qualifications": []
+    },
+    {
+      "id": "AT-24",
+      "status": "unimplemented",
+      "workPackages": [
+        "AP-03",
+        "AP-08",
+        "AP-11",
+        "AP-20"
+      ],
+      "evidence": [],
+      "qualifications": []
+    },
+    {
+      "id": "AT-25",
+      "status": "unimplemented",
+      "workPackages": [
+        "AP-13",
+        "AP-20"
+      ],
+      "evidence": [],
+      "qualifications": []
+    },
+    {
+      "id": "AT-26",
+      "status": "unimplemented",
+      "workPackages": [
+        "AP-12",
+        "AP-13"
+      ],
+      "evidence": [],
+      "qualifications": []
+    },
+    {
+      "id": "AT-27",
+      "status": "unimplemented",
+      "workPackages": [
+        "AP-09",
+        "AP-22"
+      ],
+      "evidence": [],
+      "qualifications": []
+    },
+    {
+      "id": "AT-28",
+      "status": "unimplemented",
+      "workPackages": [
+        "AP-03",
+        "AP-09"
+      ],
+      "evidence": [],
+      "qualifications": []
+    },
+    {
+      "id": "AT-29",
+      "status": "unimplemented",
+      "workPackages": [
+        "AP-09",
+        "AP-22"
+      ],
+      "evidence": [],
+      "qualifications": []
+    },
+    {
+      "id": "AT-30",
+      "status": "unimplemented",
+      "workPackages": [
+        "AP-06",
+        "AP-09",
+        "AP-23"
+      ],
+      "evidence": [],
+      "qualifications": []
+    },
+    {
+      "id": "AT-31",
+      "status": "unimplemented",
+      "workPackages": [
+        "AP-22"
+      ],
+      "evidence": [],
+      "qualifications": []
+    },
+    {
+      "id": "AT-32",
+      "status": "unimplemented",
+      "workPackages": [
+        "AP-15",
+        "AP-25"
+      ],
+      "evidence": [],
+      "qualifications": []
+    },
+    {
+      "id": "AT-33",
+      "status": "unimplemented",
+      "workPackages": [
+        "AP-10",
+        "AP-15",
+        "AP-21"
+      ],
+      "evidence": [],
+      "qualifications": []
+    },
+    {
+      "id": "AT-34",
+      "status": "unimplemented",
+      "workPackages": [
+        "AP-14",
+        "AP-15"
+      ],
+      "evidence": [],
+      "qualifications": []
+    },
+    {
+      "id": "AT-35",
+      "status": "unimplemented",
+      "workPackages": [
+        "AP-02",
+        "AP-03",
+        "AP-18",
+        "AP-20"
+      ],
+      "evidence": [],
+      "qualifications": []
+    },
+    {
+      "id": "AT-36",
+      "status": "unimplemented",
+      "workPackages": [
+        "AP-19",
+        "AP-20"
+      ],
+      "evidence": [],
+      "qualifications": []
+    },
+    {
+      "id": "AT-37",
+      "status": "unimplemented",
+      "workPackages": [
+        "AP-19",
+        "AP-20",
+        "AP-21",
+        "AP-22"
+      ],
+      "evidence": [],
+      "qualifications": []
+    },
+    {
+      "id": "AT-38",
+      "status": "unimplemented",
+      "workPackages": [
+        "AP-21",
+        "AP-23"
+      ],
+      "evidence": [],
+      "qualifications": []
+    },
+    {
+      "id": "AT-39",
+      "status": "unimplemented",
+      "workPackages": [
+        "AP-17",
+        "AP-18",
+        "AP-21"
+      ],
+      "evidence": [],
+      "qualifications": []
+    },
+    {
+      "id": "AT-40",
+      "status": "unimplemented",
+      "workPackages": [
+        "AP-16",
+        "AP-24"
+      ],
+      "evidence": [],
+      "qualifications": []
+    },
+    {
+      "id": "AT-41",
+      "status": "unimplemented",
+      "workPackages": [
+        "AP-14",
+        "AP-15",
+        "AP-25"
+      ],
+      "evidence": [],
+      "qualifications": []
+    }
+  ],
+  "openDecisions": [
+    {
+      "id": "OD-01",
+      "owner": "AP-04",
+      "decision": "SQLite implementation and durability settings",
+      "constraint": "Must satisfy atomic account/state/event transitions, migrations, fencing and backup on declared runtimes."
+    },
+    {
+      "id": "OD-02",
+      "owner": "AP-09",
+      "decision": "Supported Pi request interception and exact route set",
+      "constraint": "Final serialized payload admission must precede transport; fail closed on unsupported SDK capabilities."
+    },
+    {
+      "id": "OD-03",
+      "owner": "AP-06",
+      "decision": "Resolved numerical request/token/tool/deadline caps and pricing policy",
+      "constraint": "Finite effective limits and completion reserve before dispatch; no invented monetary accuracy."
+    },
+    {
+      "id": "OD-04",
+      "owner": "AP-25",
+      "decision": "Supported OS/Node/Pi release matrix",
+      "constraint": "Current Node minimum is 22.19.0 and Pi pin is 0.87.0; qualify each claimed environment."
+    },
+    {
+      "id": "OD-05",
+      "owner": "AP-16",
+      "decision": "Live corpus, routes, spending allowance and comparison metrics",
+      "constraint": "Resolve from operator authorization before provider traffic; do not block independent offline work."
+    },
+    {
+      "id": "OD-06",
+      "owner": "AP-24",
+      "decision": "Recursive release acceptance thresholds",
+      "constraint": "Set before evaluation, include unsuccessful tasks and usage uncertainty."
+    }
+  ]
+}

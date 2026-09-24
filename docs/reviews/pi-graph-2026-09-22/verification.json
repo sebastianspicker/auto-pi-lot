@@ -1,0 +1,137 @@
+{
+  "reviewDate": "2026-09-22",
+  "source": "local pi-graph checkout (sibling of this repository)",
+  "sourceHead": "b68253f13dd61e26183dfb0c8310145cf48735cd",
+  "workingTreeDirty": true,
+  "reviewBasis": "Working tree snapshot, not HEAD alone; no source changes made to predecessor.",
+  "temporarySnapshot": "temporary copy of the working tree (since deleted)",
+  "runtime": "Node 24.21.0",
+  "dependencies": "Existing predecessor node_modules reused through a symlink; not a clean install.",
+  "sourceFingerprints": {
+    "src": {
+      "files": 354,
+      "lines": 57237,
+      "sha256": "ea446572e45ecf7d9150962530c1a7fe14b0ae7df95c466e5f3a83c1bbe020b7"
+    },
+    "test": {
+      "files": 173,
+      "lines": 46255,
+      "sha256": "8cb631958a4823ceb4e3ffcda61a176ce2e715673c2fc053cdd0664b261bbe39"
+    },
+    "scripts": {
+      "files": 49,
+      "lines": 7505,
+      "sha256": "2cdfc5d4b83279e2db07eac6dd3bc4e452c51035d3496358db628c9f109a2757"
+    },
+    "prompts": {
+      "files": 19,
+      "lines": 746,
+      "sha256": "9e7694007103b99f9cc59867ce7d2a087beed223d2577b835a6463557dab3c2d"
+    },
+    "contracts": {
+      "files": 9,
+      "lines": 5959,
+      "sha256": "2ade34538571b53bbb04599b7e11e922047cecec072fa3f00e84c656efec2404"
+    }
+  },
+  "fingerprintAlgorithm": "SHA256 of sorted UTF-8 relativePath + NUL + SHA256(fileBytes) + newline records for the stated area and extensions.",
+  "fingerprintExtensions": {
+    "src": [
+      ".ts",
+      ".py"
+    ],
+    "test": [
+      ".mjs",
+      ".json"
+    ],
+    "scripts": [
+      ".mjs",
+      ".sh",
+      ".py"
+    ],
+    "prompts": [
+      ".md",
+      ".json"
+    ],
+    "contracts": [
+      ".json"
+    ]
+  },
+  "originalMatchesSnapshotAtReviewEnd": true,
+  "commands": [
+    {
+      "command": "AUTO_PI_LOT_LIVE_TESTS=0 sh scripts/node24.sh npm run quality",
+      "exitCode": 0,
+      "qualification": "Initial copy omitted historical nested dist fixtures; restored unchanged before successful quality run. 353 TS modules, no architecture problems; complexity gate passed with 52 baselined over-limit functions, maximum 58."
+    },
+    {
+      "command": "AUTO_PI_LOT_LIVE_TESTS=0 sh scripts/node24.sh npm test",
+      "exitCode": 1,
+      "counts": {
+        "tests": 1353,
+        "pass": 1347,
+        "fail": 3,
+        "skipped": 3
+      },
+      "durationMs": 211614.5665,
+      "qualification": "Only failures were three campaign-graph clone-fixture tests because the isolated copy initially omitted .git. These were environment setup failures, not established runtime regressions."
+    },
+    {
+      "command": "AUTO_PI_LOT_LIVE_TESTS=0 sh scripts/node24.sh node --test test/evaluation/campaign-graph.test.mjs",
+      "exitCode": 0,
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "skipped": 0
+      },
+      "qualification": "Reused a copy of original Git metadata. An initial sandbox run hit SQLITE_READONLY; the approved outside-sandbox rerun passed."
+    }
+  ],
+  "combinedCoverage": {
+    "tests": 1353,
+    "nonSkippedCasesObservedPassing": 1350,
+    "liveProviderSkipped": 3,
+    "singleCleanFullSuiteRun": false
+  },
+  "offlineReproductions": [
+    {
+      "script": "reproduce-cancel-before-dispatch.mjs",
+      "exitCode": 0,
+      "observed": [
+        "admitted -> uncertain without admission.dispatched",
+        "model_call.cancelled_before_dispatch",
+        "reservedTurns=1; uncertain=true; terminalUsageKnown=false",
+        "new admission: RUN_COMPLETION_UNCERTAIN",
+        "direct settlement: MODEL_CALL_RECONCILIATION_IDENTITY_MISMATCH",
+        "reconciliation: RECONCILIATION_REQUIRES_UNCERTAIN_DISPATCH",
+        "final state remains uncertain"
+      ]
+    },
+    {
+      "script": "reproduce-request-boundary.mjs",
+      "exitCode": 0,
+      "observed": [
+        "Real installRequestBoundary with fake stream and temporary SQLite",
+        "Injected accounting.manifest failure after payload admission, before dispatch",
+        "Persisted state uncertain with no admission.dispatched",
+        "model_call.cancelled_before_dispatch; account uncertain=true",
+        "No provider/network request"
+      ]
+    }
+  ],
+  "logHashes": {
+    "quality.log": "794ba440fa341129a62b510ccf0398a99fb2c731530a72bf8348f3847cb15f19",
+    "tests.log": "36d2bc903e9bc65292d9cfe2a538f3ee443132586f83148d3bcd81478dafdb1b",
+    "campaign-fixture-recheck.log": "00bbc33f64b85c510e11196577cd8ec71155bda6bc46957e1f0060307a96359f",
+    "predispatch-reproduction.log": "55b89aa079b2e1dac793b9d702a16cc78e7f0f87d52f3d6eaefbad57edea264f",
+    "boundary-reproduction.log": "c03967a4e343c8229bcb2cacbc958bdce5091d1bc8f3e7a4171ffbad6950fae3"
+  },
+  "limitations": [
+    "No new live-provider qualification",
+    "No clean dependency reinstall or multi-platform run",
+    "Raw historical artifacts were not exhaustively audited",
+    "Original source and state were left unchanged",
+    "Predecessor defect not fixed as part of this review"
+  ]
+}

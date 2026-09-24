@@ -1,0 +1,28 @@
+{
+  "name": "@auto-pi-lot/pi",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./extension": {
+      "types": "./dist/extension.d.ts",
+      "default": "./dist/extension.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@auto-pi-lot/core": "0.0.0",
+    "@earendil-works/pi-coding-agent": "0.87.0"
+  },
+  "pi": {
+    "extensions": [
+      "./dist/extension.js"
+    ]
+  }
+}

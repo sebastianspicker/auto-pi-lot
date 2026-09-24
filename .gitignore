@@ -1,0 +1,11 @@
+node_modules/
+dist/
+*.tsbuildinfo
+coverage/
+.auto-pi-lot/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+.agents/
