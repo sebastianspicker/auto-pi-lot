@@ -1,0 +1,26 @@
+{
+  "name": "@auto-pi-lot/core",
+  "version": "0.0.0",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./session": {
+      "types": "./dist/session.d.ts",
+      "default": "./dist/session.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "fast-check": "4.10.2"
+  }
+}
