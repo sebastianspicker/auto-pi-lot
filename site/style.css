@@ -683,6 +683,11 @@ body:not(.is-loading) .loading {
   gap: var(--s-3);
 }
 
+.step-live {
+  display: grid;
+  gap: var(--s-3);
+}
+
 .step-event {
   font-family: var(--font-mono);
   font-size: var(--text-s);

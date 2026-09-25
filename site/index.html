@@ -123,10 +123,12 @@
             <button type="button" id="play" class="play" aria-pressed="false">Play</button>
           </div>
 
-          <div class="step" aria-live="polite" aria-atomic="true">
+          <div class="step">
             <p class="step-event" id="step-event"></p>
-            <p class="step-note" id="step-note"></p>
-            <div class="verdict" id="verdict"></div>
+            <div class="step-live" aria-live="polite" aria-atomic="true">
+              <p class="step-note" id="step-note"></p>
+              <div class="verdict" id="verdict"></div>
+            </div>
           </div>
 
           <h3 class="section-label">Commands for the host</h3>

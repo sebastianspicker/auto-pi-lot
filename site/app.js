@@ -351,7 +351,7 @@ function renderJournal(scenario) {
     }
     const button = html(
       "button",
-      { type: "button", class: classes.join(" ") },
+      { type: "button", class: classes.join(" "), "data-focus": `entry-${step.index}` },
       html("span", { class: "entry-no" }, String(step.index + 1).padStart(2, "0")),
       html("span", { class: "entry-time" }, elapsed(scenario, step)),
       html("span", { class: "entry-type" }, step.event.type),
@@ -387,7 +387,7 @@ function renderRoutes() {
     meta.append(`ends ${scenario.finalStatus}`);
     const link = html(
       "a",
-      { class: "route", href: `#${scenario.id}/1` },
+      { class: "route", href: `#${scenario.id}/1`, "data-focus": `route-${index}` },
       html("span", { class: "route-no", "aria-hidden": "true" }, String(index + 1).padStart(2, "0")),
       html("span", { class: "route-name" }, name),
       html("span", { class: "route-desc" }, description),
@@ -409,7 +409,13 @@ function renderProvenance(scenario) {
   );
 }
 
+/** Re-rendering replaces the lists, so focus moves back to the rebuilt control with the same key. */
+function restoreFocus(key) {
+  if (key !== undefined) document.querySelector(`[data-focus="${key}"]`)?.focus();
+}
+
 function render() {
+  const focused = document.activeElement?.dataset?.focus;
   const scenario = view.scenario;
   const step = scenario.steps[view.step];
   const previous = scenario.steps[view.step - 1];
@@ -423,6 +429,7 @@ function render() {
   renderProvenance(scenario);
   byId("prev").disabled = view.step === 0;
   byId("next").disabled = view.step === scenario.steps.length - 1;
+  restoreFocus(focused);
 }
 
 function go(scenarioId, stepIndex) {
@@ -461,7 +468,13 @@ function togglePlay() {
 }
 
 function fromHash() {
-  const [id, step] = decodeURIComponent(location.hash.slice(1)).split("/");
+  let hash = location.hash.slice(1);
+  try {
+    hash = decodeURIComponent(hash);
+  } catch {
+    // A mangled link (a stray "%") falls back to the raw text, which then matches no scenario.
+  }
+  const [id, step] = hash.split("/");
   return { id, step: Number.parseInt(step ?? "1", 10) - 1 || 0 };
 }
 
