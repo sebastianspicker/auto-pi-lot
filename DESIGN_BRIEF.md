@@ -162,8 +162,9 @@ evolves the existing "lamp" vocabulary rather than discarding it.
   columns, the step detail is pinned in the right four so the explanation never scrolls away
   from the diagram. On phones the graph turns vertical (tracks run downward), so node text
   stays at reading size, and the transport controls move to a bar under the thumb.
-- **Motion.** Lamps cross-fade between aspects (160 ms), a changed node's frame tightens,
-  and that is all. No entrance animations. `prefers-reduced-motion` removes the fades.
+- **Motion.** Lamps switch aspect instantly, as real lamps do; a changed node's frame
+  thickens and tracks change colour over 160 ms, and that is all. No entrance animations.
+  `prefers-reduced-motion` sets every duration to zero.
 - **Signature details.** (1) Track that lights up when its condition is met, so you *see*
   why `verify` may start and `review` may not. (2) The register: every event on a ruled line
   with its relative time, node and verdict; rejected lines carry the typed reason in red.
@@ -228,5 +229,7 @@ condition, the register by column headings.
 - Functional changes, all small: the page follows `hashchange` (back button and pasted
   links now work on an open page); the graph lays out vertically on narrow screens; the live
   region is limited to the step note and verdict; edges show whether their condition is met;
-  commands show full identifiers (middle-truncated, full value in a tooltip and copyable);
+  commands show identifiers middle-truncated instead of cut off, with the full value in a
+  tooltip; the verdict names which nodes changed, and says so when a rejected event left the
+  run state unchanged (only when the snapshots are identical);
   Home and End jump to the first and last step. The data contract is unchanged.

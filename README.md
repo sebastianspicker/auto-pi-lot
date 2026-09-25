@@ -38,7 +38,7 @@ and the commands it hands back to the host.
 
 When an attempt fails, the reducer schedules a new attempt with a new ID and a higher fencing
 token. A late message from the old attempt, or one carrying the wrong token, is rejected and
-leaves the state untouched. Rejected events show up as red marks on the timeline.
+leaves the state untouched. Rejected events are marked in red in the journal, with their typed reason.
 
 ### Cancellation
 
