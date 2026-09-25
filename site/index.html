@@ -8,74 +8,157 @@
       name="description"
       content="Step through real run traces from the auto-pi-lot reducer: validated task graphs, dispatch, retries, fencing and host acceptance."
     />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#e9e6de" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#121416" media="(prefers-color-scheme: dark)" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=Spline+Sans+Mono:wght@400;600&display=swap"
       rel="stylesheet"
     />
     <link rel="stylesheet" href="style.css" />
   </head>
-  <body>
+  <body class="is-loading">
+    <!-- Lamp glyphs. Every state has its own shape as well as its own colour. -->
+    <svg class="sprite" aria-hidden="true" focusable="false">
+      <symbol id="lamp-pending" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="8" style="fill: none; stroke: var(--lamp-off); stroke-width: 2.5" />
+      </symbol>
+      <symbol id="lamp-ready" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="8" style="fill: none; stroke: var(--caution); stroke-width: 2.5" />
+        <circle cx="12" cy="12" r="3.25" style="fill: var(--caution)" />
+      </symbol>
+      <symbol id="lamp-running" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="9.25" style="fill: var(--caution)" />
+      </symbol>
+      <symbol id="lamp-unverified" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="8" style="fill: var(--lunar); stroke: var(--lunar-rim); stroke-width: 2.5" />
+        <path d="M 4 12 A 8 8 0 0 0 20 12 Z" style="fill: var(--lunar-rim)" />
+      </symbol>
+      <symbol id="lamp-accepted" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="9.25" style="fill: var(--clear)" />
+        <path
+          d="M 7.4 12.3 L 10.6 15.4 L 16.8 8.9"
+          style="fill: none; stroke: var(--on-signal); stroke-width: 2.4; stroke-linecap: square"
+        />
+      </symbol>
+      <symbol id="lamp-failed" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="9.25" style="fill: var(--danger)" />
+        <rect x="6.5" y="10.75" width="11" height="2.5" style="fill: var(--on-signal)" />
+      </symbol>
+      <symbol id="lamp-cancelled" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="8" style="fill: none; stroke: var(--lamp-off); stroke-width: 2.5" />
+        <path d="M 6.6 17.4 L 17.4 6.6" style="stroke: var(--lamp-off); stroke-width: 2.5" />
+      </symbol>
+    </svg>
+
     <header class="masthead">
-      <div class="masthead-text">
-        <h1>auto-pi-lot run traces</h1>
-        <p>
-          Each trace below is a scripted host driving the real run reducer from
-          <code>@auto-pi-lot/core</code>. Step through it to see which events the reducer applies, which it rejects,
-          and what it asks the host to do next.
-        </p>
+      <div class="masthead-bar">
+        <p class="wordmark">auto-pi-lot</p>
+        <nav class="project-links" aria-label="Project">
+          <a href="https://github.com/sebastianspicker/auto-pi-lot/blob/main/docs/design.md">Design</a>
+          <a href="https://github.com/sebastianspicker/auto-pi-lot/blob/main/docs/roadmap.md">Roadmap</a>
+          <a href="https://github.com/sebastianspicker/auto-pi-lot">Source</a>
+        </nav>
       </div>
-      <a class="repo-link" href="https://github.com/sebastianspicker/auto-pi-lot">Source on GitHub</a>
+      <div class="intro">
+        <p class="kicker">Run traces</p>
+        <h1>Agents propose. <span>The reducer decides.</span></h1>
+        <div class="intro-text">
+          <p class="lead">
+            Each trace is a scripted host sending events to the real run reducer from
+            <code>@auto-pi-lot/core</code>. Step through a run to see which events the reducer applies, which it
+            rejects, and what it tells the host to do next. Nothing on this page calls a model.
+          </p>
+          <p class="status-note">
+            <strong>Early foundation.</strong> The deterministic core is built and tested. Running real tasks end to end
+            is not built yet.
+          </p>
+        </div>
+      </div>
     </header>
 
-    <main>
-      <nav class="scenarios" aria-label="Scenarios" id="scenario-tabs"></nav>
-      <p class="scenario-summary" id="scenario-summary"></p>
+    <main id="main">
+      <p class="loading" id="loading">Loading traces…</p>
+      <noscript><p class="notice">The trace viewer needs JavaScript to replay <code>trace.json</code>.</p></noscript>
 
-      <section class="board" aria-label="Run state">
-        <div class="graph-panel">
-          <div class="run-status" id="run-status"></div>
-          <svg id="graph" role="img" aria-label="Task graph with node states"></svg>
+      <nav class="routes" aria-label="Scenarios">
+        <ol id="scenario-list"></ol>
+      </nav>
+
+      <div class="console">
+        <section class="board" aria-labelledby="scenario-title">
+          <div class="board-head">
+            <h2 class="visually-hidden" id="scenario-title">Scenario</h2>
+            <p class="scenario-summary" id="scenario-summary"></p>
+          </div>
+          <dl class="gauges" id="gauges"></dl>
+          <div class="graph-frame">
+            <svg id="graph" role="img" aria-label="Task graph"></svg>
+          </div>
           <ul class="legend" aria-label="Legend">
-            <li><span class="lamp s-pending"></span>Pending</li>
-            <li><span class="lamp s-ready"></span>Reserved</li>
-            <li><span class="lamp s-running"></span>Running</li>
-            <li><span class="lamp s-unverified"></span>Result waiting for acceptance</li>
-            <li><span class="lamp s-accepted"></span>Accepted</li>
-            <li><span class="lamp s-failed"></span>Rejected or failed</li>
-            <li><span class="lamp s-cancelled"></span>Cancelled</li>
-            <li><span class="edge-key dashed"></span>Needs a result</li>
-            <li><span class="edge-key"></span>Needs an accepted result</li>
+            <li><svg class="glyph" aria-hidden="true"><use href="#lamp-pending" /></svg>Pending</li>
+            <li><svg class="glyph" aria-hidden="true"><use href="#lamp-ready" /></svg>Reserved</li>
+            <li><svg class="glyph" aria-hidden="true"><use href="#lamp-running" /></svg>Running</li>
+            <li><svg class="glyph" aria-hidden="true"><use href="#lamp-unverified" /></svg>Result awaiting acceptance</li>
+            <li><svg class="glyph" aria-hidden="true"><use href="#lamp-accepted" /></svg>Accepted</li>
+            <li><svg class="glyph" aria-hidden="true"><use href="#lamp-failed" /></svg>Rejected or failed</li>
+            <li><svg class="glyph" aria-hidden="true"><use href="#lamp-cancelled" /></svg>Cancelled</li>
+            <li class="legend-track"><span class="track-key dashed"></span>Needs a result</li>
+            <li class="legend-track"><span class="track-key"></span>Needs an accepted result</li>
+            <li class="legend-track"><span class="track-key lit"></span>Lit track: condition met</li>
           </ul>
-        </div>
+        </section>
 
-        <aside class="step-panel" aria-live="polite">
-          <p class="step-count" id="step-count"></p>
-          <p class="step-note" id="step-note"></p>
-          <div class="outcome" id="outcome"></div>
-          <h2>Event</h2>
-          <pre class="json" id="event-json"></pre>
-          <h2>Commands for the host</h2>
-          <div id="commands"></div>
+        <aside class="detail" aria-label="Current step">
+          <div class="transport" id="transport">
+            <button type="button" id="prev" aria-label="Previous step" aria-keyshortcuts="ArrowLeft">
+              <span aria-hidden="true">←</span>
+            </button>
+            <p class="step-count" id="step-count"></p>
+            <button type="button" id="next" aria-label="Next step" aria-keyshortcuts="ArrowRight">
+              <span aria-hidden="true">→</span>
+            </button>
+            <button type="button" id="play" class="play" aria-pressed="false">Play</button>
+          </div>
+
+          <div class="step" aria-live="polite" aria-atomic="true">
+            <p class="step-event" id="step-event"></p>
+            <p class="step-note" id="step-note"></p>
+            <div class="verdict" id="verdict"></div>
+          </div>
+
+          <h3 class="section-label">Commands for the host</h3>
+          <ol class="commands" id="commands"></ol>
+
+          <details class="payload" id="payload" open>
+            <summary class="section-label">Event as sent</summary>
+            <pre id="event-json"></pre>
+          </details>
         </aside>
-      </section>
 
-      <section class="tape-section" aria-label="Timeline">
-        <div class="controls">
-          <button type="button" id="prev" aria-label="Previous step">Previous</button>
-          <button type="button" id="next" aria-label="Next step">Next</button>
-          <button type="button" id="play">Play</button>
-        </div>
-        <ol class="tape" id="tape"></ol>
-      </section>
+        <section class="journal" aria-labelledby="journal-title">
+          <div class="journal-head">
+            <h3 class="section-label" id="journal-title">Journal</h3>
+            <p class="journal-tally" id="journal-tally"></p>
+          </div>
+          <div class="journal-columns" aria-hidden="true">
+            <span>No.</span><span>Time</span><span>Event</span><span>Node</span><span>Reducer</span>
+          </div>
+          <ol class="journal-list" id="journal"></ol>
+        </section>
+      </div>
     </main>
 
     <footer class="footer">
-      <p id="provenance"></p>
+      <p class="provenance" id="provenance"></p>
       <p>
-        Use the arrow keys to step. The traces come from
-        <code>node packages/cli/dist/index.js trace</code>; nothing here calls a model.
+        Step with <kbd>←</kbd> <kbd>→</kbd>, jump with <kbd>Home</kbd> <kbd>End</kbd>. The traces are generated by
+        <code>node packages/cli/dist/index.js trace</code> from the commit this page was published from.
+      </p>
+      <p>
+        <a href="https://github.com/sebastianspicker/auto-pi-lot">auto-pi-lot on GitHub</a> · MIT licence
       </p>
     </footer>
 
