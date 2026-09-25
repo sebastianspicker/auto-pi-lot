@@ -9,7 +9,7 @@ const MIN_BOARD_COLUMNS = 3;
 const NARROW = window.matchMedia("(max-width: 640px)");
 
 /** Board geometry, in SVG units. Wide boards flow left to right, narrow ones top to bottom. */
-const WIDE = { nodeWidth: 240, nodeHeight: 100, rankGap: 96, siblingGap: 28, margin: 20 };
+const WIDE = { nodeWidth: 256, nodeHeight: 104, rankGap: 80, siblingGap: 28, margin: 20 };
 const TALL = { nodeWidth: 172, nodeHeight: 116, rankGap: 64, siblingGap: 16, margin: 20 };
 
 const view = { trace: null, scenario: null, step: 0, timer: null };
@@ -129,6 +129,7 @@ function renderGraph(scenario, step, previous) {
   const root = byId("graph");
   root.replaceChildren();
   root.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  root.setAttribute("class", tall ? "tall" : "wide");
   // Tall boards never scale up, so a single column of nodes does not push the step off screen.
   root.style.maxWidth = tall ? `${width}px` : "";
 
@@ -216,9 +217,9 @@ function renderGraph(scenario, step, previous) {
       glyph.setAttribute("height", 26);
       group.append(
         glyph,
-        fit(svg("text", { x: 50, y: 35, class: "node-name" }, spec.id), w - 62, 12.5),
-        fit(svg("text", { x: 16, y: 66, class: "node-state" }, state.join(" · ")), w - 32, 8.8),
-        fit(svg("text", { x: 16, y: 87, class: "node-meta" }, meta), w - 32, 8.6),
+        fit(svg("text", { x: 50, y: 35, class: "node-name" }, spec.id), w - 62, 13.2),
+        fit(svg("text", { x: 16, y: 68, class: "node-state" }, state.join(" · ")), w - 32, 9.6),
+        fit(svg("text", { x: 16, y: 90, class: "node-meta" }, meta), w - 32, 9),
       );
     }
     root.append(group);

@@ -547,6 +547,14 @@ body:not(.is-loading) .loading {
   font-size: 14.5px;
 }
 
+#graph.wide .node-name {
+  font-size: 24px;
+}
+
+#graph.wide .node-state {
+  font-size: 16px;
+}
+
 #graph .node-meta {
   fill: var(--ink-3);
   font-family: var(--font-sans);
@@ -554,6 +562,10 @@ body:not(.is-loading) .loading {
   font-weight: 600;
   font-size: 13.5px;
   letter-spacing: 0.07em;
+}
+
+#graph.wide .node-meta {
+  font-size: 14.5px;
 }
 
 .legend {
