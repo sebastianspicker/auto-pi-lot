@@ -15,9 +15,9 @@ site/trace.json
 !.env.example
 *.log
 
-# Personal and agent-local files (shared agent config in .claude/settings.json stays tracked)
+# Personal and agent-local files
 .agents/
-.claude/settings.local.json
+.claude/
 .DS_Store
 .idea/
 .vscode/

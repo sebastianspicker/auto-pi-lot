@@ -1296,7 +1296,6 @@
       "owns": [
         "scripts",
         "biome.json",
-        ".claude/settings.json",
         "package.json"
       ],
       "deliverables": [

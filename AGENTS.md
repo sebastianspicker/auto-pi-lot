@@ -72,8 +72,9 @@ Run `npm run check` for code changes. Add focused tests for changed graph invari
 transitions, contracts and failure recovery, using fake sessions. Real-provider checks must be
 explicit, optional and cost-bounded. For docs-only changes, check links and consistency.
 Scheduler work must test nested waits, cancellation, stale worker results, duplicate dispatch,
-budget exhaustion and crash recovery. `.claude/settings.json` runs `npm run check` before Claude
-Code stops; agents without that hook must run it themselves before handing off.
+budget exhaustion and crash recovery. `scripts/stop-hook.sh` runs `npm run check` as a Claude Code
+Stop hook when wired up in a local, untracked `.claude/settings.json`; agents without that hook
+must run it themselves before handing off.
 
 ## Delegation
 
