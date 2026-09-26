@@ -238,12 +238,12 @@ function happyPathScenario(): ScenarioTrace {
 
   const actions: Action[] = [
     {
-      note: "The host starts the run under the policy above; the reducer immediately reserves and dispatches the only ready node, implement.",
+      note: "The host starts the run. implement doesn't depend on anything, so the reducer dispatches it straight away.",
       expect: "applied",
       build: (ctx) => ctx.runStarted(graph, policy),
     },
     {
-      note: "The host persists implement's dispatch intent before launching its worker.",
+      note: "The host reports that implement's attempt has started.",
       expect: "applied",
       build: (ctx) => {
         const d = ctx.dispatchFor("implement");
@@ -251,7 +251,7 @@ function happyPathScenario(): ScenarioTrace {
       },
     },
     {
-      note: "Implement proposes a result. Verify becomes dispatchable immediately on the result_ready edge, even though implement's disposition is still unverified. That is what a result_ready edge is for.",
+      note: "implement proposes a result. verify can start now: it only needs a result from implement, not an accepted one.",
       expect: "applied",
       build: (ctx) => {
         const d = ctx.dispatchFor("implement");
@@ -259,7 +259,7 @@ function happyPathScenario(): ScenarioTrace {
       },
     },
     {
-      note: "The host dispatches verify's attempt while implement's own acceptance decision is still outstanding.",
+      note: "verify's attempt starts. The host hasn't decided yet whether to accept implement's result.",
       expect: "applied",
       build: (ctx) => {
         const d = ctx.dispatchFor("verify");
@@ -267,7 +267,7 @@ function happyPathScenario(): ScenarioTrace {
       },
     },
     {
-      note: "The host's acceptance gate accepts implement's proposal, citing a check receipt. Review stays blocked: it depends on verify's acceptance, not implement's.",
+      note: "The host accepts implement's result and cites a check receipt. review still waits: it needs verify's result to be accepted, not implement's.",
       expect: "applied",
       build: (ctx) => {
         const d = ctx.dispatchFor("implement");
@@ -275,7 +275,7 @@ function happyPathScenario(): ScenarioTrace {
       },
     },
     {
-      note: "Verify proposes its result. Review is not dispatched yet because it needs verify's acceptance, not merely its result.",
+      note: "verify proposes a result. review still waits, because it needs that result accepted.",
       expect: "applied",
       build: (ctx) => {
         const d = ctx.dispatchFor("verify");
@@ -283,7 +283,7 @@ function happyPathScenario(): ScenarioTrace {
       },
     },
     {
-      note: "The host accepts verify's result. Review, which was waiting on verify's acceptance, is now dispatched.",
+      note: "The host accepts verify's result, so the reducer dispatches review.",
       expect: "applied",
       build: (ctx) => {
         const d = ctx.dispatchFor("verify");
@@ -291,7 +291,7 @@ function happyPathScenario(): ScenarioTrace {
       },
     },
     {
-      note: "The host dispatches review's attempt.",
+      note: "review's attempt starts.",
       expect: "applied",
       build: (ctx) => {
         const d = ctx.dispatchFor("review");
@@ -299,7 +299,7 @@ function happyPathScenario(): ScenarioTrace {
       },
     },
     {
-      note: "Review proposes its result; only its own acceptance decision remains before the run can finish.",
+      note: "review proposes a result. Once the host decides on it, the run is over.",
       expect: "applied",
       build: (ctx) => {
         const d = ctx.dispatchFor("review");
@@ -307,7 +307,7 @@ function happyPathScenario(): ScenarioTrace {
       },
     },
     {
-      note: "The host accepts review's result. Every node is now accepted, so the run completes with status succeeded.",
+      note: "The host accepts review's result. All three tasks are accepted, so the run ends as succeeded.",
       expect: "applied",
       build: (ctx) => {
         const d = ctx.dispatchFor("review");
@@ -320,7 +320,7 @@ function happyPathScenario(): ScenarioTrace {
     id: "happy-path",
     title: "Happy path: implement, verify, review",
     summary:
-      "A three-node pipeline runs end to end: verify starts on implement's unverified result, and review waits for verify's acceptance before it starts.",
+      "Three tasks in a row. verify starts as soon as implement has a result, before anyone has accepted it. review waits until verify's result is accepted.",
     graph,
     policy,
     actions,
@@ -364,12 +364,12 @@ function retryAndFencingScenario(): ScenarioTrace {
 
   const actions: Action[] = [
     {
-      note: "The host starts the run under maxConcurrent 1; implement is the only ready node and its first attempt dispatches.",
+      note: "The host starts the run with room for one attempt at a time. implement is the only task that can start, so the reducer dispatches its first attempt.",
       expect: "applied",
       build: (ctx) => ctx.runStarted(graph, policy),
     },
     {
-      note: "The host dispatches implement's first attempt.",
+      note: "implement's first attempt starts.",
       expect: "applied",
       build: (ctx) => {
         const d = ctx.dispatchFor("implement");
@@ -377,7 +377,7 @@ function retryAndFencingScenario(): ScenarioTrace {
       },
     },
     {
-      note: "Implement's first attempt crashes. It has not used its attempt budget yet, so the reducer reserves a retry under a new attempt id and a higher fencing token.",
+      note: "The first attempt crashes. implement has attempts left, so the reducer schedules a retry with a new attempt ID and a higher fencing token.",
       expect: "applied",
       build: (ctx) => {
         const d = ctx.dispatchFor("implement");
@@ -385,7 +385,7 @@ function retryAndFencingScenario(): ScenarioTrace {
       },
     },
     {
-      note: "The host dispatches the retry attempt.",
+      note: "The retry starts.",
       expect: "applied",
       build: (ctx) => {
         const d = ctx.dispatchFor("implement");
@@ -393,7 +393,7 @@ function retryAndFencingScenario(): ScenarioTrace {
       },
     },
     {
-      note: "A late result from the crashed first attempt arrives after the retry already started. Attempt ids are never reused, so the reducer rejects it as invalid_transition rather than treating it as the retry's outcome.",
+      note: "A late result arrives from the first attempt, which already crashed. The reducer doesn't mistake it for the retry's result and rejects it as invalid_transition.",
       expect: "rejected",
       build: (ctx) => {
         const first = ctx.dispatchNumberFor("implement", 1);
@@ -401,7 +401,7 @@ function retryAndFencingScenario(): ScenarioTrace {
       },
     },
     {
-      note: "A result for the retry attempt arrives with the wrong fencing token. The reducer rejects it outright with stale_fencing_token instead of guessing which attempt it belongs to.",
+      note: "A result for the retry arrives with the wrong fencing token. The reducer rejects it as stale_fencing_token instead of guessing where it came from.",
       expect: "rejected",
       build: (ctx) => {
         const retryAttempt = ctx.dispatchFor("implement");
@@ -409,7 +409,7 @@ function retryAndFencingScenario(): ScenarioTrace {
       },
     },
     {
-      note: "The retry proposes its result with the correct attempt id and fencing token; only its acceptance decision remains.",
+      note: "The retry proposes a result with the right attempt ID and token. Now the host has to decide whether to accept it.",
       expect: "applied",
       build: (ctx) => {
         const retryAttempt = ctx.dispatchFor("implement");
@@ -417,7 +417,7 @@ function retryAndFencingScenario(): ScenarioTrace {
       },
     },
     {
-      note: "The host's acceptance gate rejects the retry's result. Implement still has attempt budget left, so the reducer reserves a third attempt instead of exhausting the node.",
+      note: "The host rejects the retry's result. implement has one attempt left, so the reducer schedules a third.",
       expect: "applied",
       build: (ctx) => {
         const retryAttempt = ctx.dispatchFor("implement");
@@ -425,7 +425,7 @@ function retryAndFencingScenario(): ScenarioTrace {
       },
     },
     {
-      note: "The host dispatches implement's third and final attempt.",
+      note: "implement's third and last attempt starts.",
       expect: "applied",
       build: (ctx) => {
         const d = ctx.dispatchFor("implement");
@@ -433,7 +433,7 @@ function retryAndFencingScenario(): ScenarioTrace {
       },
     },
     {
-      note: "The third attempt proposes its result.",
+      note: "The third attempt proposes a result.",
       expect: "applied",
       build: (ctx) => {
         const d = ctx.dispatchFor("implement");
@@ -441,7 +441,7 @@ function retryAndFencingScenario(): ScenarioTrace {
       },
     },
     {
-      note: "The host accepts implement's result. Downstream, which needed implement's acceptance, is now dispatched.",
+      note: "The host accepts implement's result. downstream was waiting for that, so the reducer dispatches it.",
       expect: "applied",
       build: (ctx) => {
         const d = ctx.dispatchFor("implement");
@@ -449,7 +449,7 @@ function retryAndFencingScenario(): ScenarioTrace {
       },
     },
     {
-      note: "The host dispatches downstream's attempt.",
+      note: "downstream's attempt starts.",
       expect: "applied",
       build: (ctx) => {
         const d = ctx.dispatchFor("downstream");
@@ -457,7 +457,7 @@ function retryAndFencingScenario(): ScenarioTrace {
       },
     },
     {
-      note: "Downstream proposes its result.",
+      note: "downstream proposes a result.",
       expect: "applied",
       build: (ctx) => {
         const d = ctx.dispatchFor("downstream");
@@ -465,7 +465,7 @@ function retryAndFencingScenario(): ScenarioTrace {
       },
     },
     {
-      note: "The host accepts downstream's result. Every node is now accepted, so the run completes with status succeeded.",
+      note: "The host accepts downstream's result. Both tasks are accepted, so the run ends as succeeded.",
       expect: "applied",
       build: (ctx) => {
         const d = ctx.dispatchFor("downstream");
@@ -476,9 +476,9 @@ function retryAndFencingScenario(): ScenarioTrace {
 
   return runScenario({
     id: "retry-and-fencing",
-    title: "Retry and fencing: a crashed attempt, a stale result, and a rejected retry",
+    title: "Retry and fencing: a crash, a late result and a wrong token",
     summary:
-      "Implement's first attempt crashes and its retry is rejected once before a third attempt succeeds, exercising the reducer's fencing tokens against a late result from the dead first attempt and a spoofed token on the retry.",
+      "implement's first attempt crashes and the host rejects the second attempt's result, so it takes three tries. Along the way the reducer turns away a late result from the crashed attempt and a result with the wrong fencing token.",
     graph,
     policy,
     actions,
@@ -531,12 +531,12 @@ function cancellationScenario(): ScenarioTrace {
 
   const actions: Action[] = [
     {
-      note: "The host starts the run under maxConcurrent 2. Lint and test are two independent root nodes, so both dispatch immediately.",
+      note: "The host starts the run with room for two attempts at a time. lint and test don't depend on anything, so both are dispatched.",
       expect: "applied",
       build: (ctx) => ctx.runStarted(graph, policy),
     },
     {
-      note: "The host dispatches lint's attempt.",
+      note: "lint's attempt starts.",
       expect: "applied",
       build: (ctx) => {
         const d = ctx.dispatchFor("lint");
@@ -544,7 +544,7 @@ function cancellationScenario(): ScenarioTrace {
       },
     },
     {
-      note: "The host dispatches test's attempt.",
+      note: "test's attempt starts.",
       expect: "applied",
       build: (ctx) => {
         const d = ctx.dispatchFor("test");
@@ -552,7 +552,7 @@ function cancellationScenario(): ScenarioTrace {
       },
     },
     {
-      note: "Lint proposes a result; its acceptance decision is still outstanding when the operator cancels the run.",
+      note: "lint proposes a result. The host hasn't decided on it yet when the operator cancels.",
       expect: "applied",
       build: (ctx) => {
         const d = ctx.dispatchFor("lint");
@@ -560,12 +560,12 @@ function cancellationScenario(): ScenarioTrace {
       },
     },
     {
-      note: "The operator requests cancellation. The reducer emits cancel_attempt for the still-running test attempt and cancels the pending package node outright; lint's outstanding acceptance is left to be answered separately. No new dispatch appears.",
+      note: "The operator cancels the run. The reducer tells the host to stop test's attempt and cancels package, which hadn't started. lint's result still needs an answer. Nothing new is dispatched.",
       expect: "applied",
       build: (ctx) => ctx.cancelRequested("operator requested cancellation"),
     },
     {
-      note: "The running test attempt confirms it stopped. The run stays cancelling because lint's acceptance decision is still outstanding.",
+      note: "test's attempt confirms that it stopped. The run can't finish cancelling yet, because lint's result is still waiting for a decision.",
       expect: "applied",
       build: (ctx) => {
         const d = ctx.dispatchFor("test");
@@ -573,7 +573,7 @@ function cancellationScenario(): ScenarioTrace {
       },
     },
     {
-      note: "The host answers lint's outstanding acceptance as rejected. With no permits held and no outstanding acceptance left, the run becomes cancelled.",
+      note: "The host rejects lint's result. Nothing is running and no decisions are open, so the run ends as cancelled.",
       expect: "applied",
       build: (ctx) => {
         const d = ctx.dispatchFor("lint");
@@ -581,7 +581,7 @@ function cancellationScenario(): ScenarioTrace {
       },
     },
     {
-      note: "A late acceptance decision arrives after the run is already terminal; the reducer rejects it as run_terminal without touching state.",
+      note: "A decision on lint arrives after the run has already ended. The reducer rejects it as run_terminal and changes nothing.",
       expect: "rejected",
       build: (ctx) => {
         const d = ctx.dispatchFor("lint");
@@ -592,9 +592,9 @@ function cancellationScenario(): ScenarioTrace {
 
   return runScenario({
     id: "cancellation",
-    title: "Cancellation: an operator stops a run mid-flight",
+    title: "Cancellation: an operator stops the run",
     summary:
-      "Two independent verification nodes are running when the operator cancels the run; the reducer stops the still-running attempt, drops the pending dependent, and waits for the outstanding acceptance decision before declaring the run cancelled.",
+      "lint and test are running when the operator cancels. The reducer stops test, cancels package before it starts, and marks the run cancelled only after the host has answered lint's result.",
     graph,
     policy,
     actions,

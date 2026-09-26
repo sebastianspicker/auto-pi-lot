@@ -1,235 +1,143 @@
 # Design brief: the trace viewer
 
-The trace viewer (`site/`, published to GitHub Pages) is the only visual surface of
-auto-pi-lot. This brief records what the redesign is based on and why it looks the way it
-does. The code that implements it is `site/index.html`, `site/style.css` and `site/app.js`.
+The trace viewer (`site/`, published to GitHub Pages) is the only page auto-pi-lot has. This
+note explains what it shows, who it is for and why it looks the way it does. The code is in
+`site/index.html`, `site/style.css` and `site/app.js`.
 
-## Product summary
+## What the page shows
 
-auto-pi-lot is a local harness that runs a coding task as a graph of smaller tasks for the
-Pi coding agent. Its rule is *agents propose, the harness decides*: a model may suggest a plan
-or report success, and deterministic code validates the plan, schedules attempts, enforces
-limits and decides whether a result is accepted.
+auto-pi-lot will run a coding task as a graph of smaller tasks for the Pi coding agent. A
+model may suggest a plan or say its work is done; ordinary code checks the plan, schedules
+attempts, enforces limits and decides whether a result is accepted.
 
-Only the deterministic core exists today. The viewer replays `site/trace.json`, which
-`auto-pi-lot trace` generates by driving the real run reducer with three scripted hosts
-(happy path, retry and fencing, cancellation). Each step holds the event sent, whether the
-reducer applied or rejected it (with a typed reason), the commands it handed back to the host,
-the run status and every node's state. Nothing in the viewer calls a model or computes run
-state.
+Only that decision-making core exists today. `auto-pi-lot trace` runs three scripted
+scenarios through the real reducer (happy path, retry and fencing, cancellation) and writes
+`site/trace.json`. For every event it records what was sent, whether the reducer applied or
+rejected it and why, the commands it gave back to the host, and the state of the run and of
+every task afterwards. The page only displays that file. It calls no model and works out no
+run state of its own.
 
-**Moment of value:** the step where the reducer *rejects* something a naive system would have
-accepted: the late result from a crashed attempt, the wrong fencing token, the acceptance
-decision after the run ended. That is when a visitor understands that the harness, not the
-model, is in charge. The happy path's step 3, where `verify` starts on an unaccepted result
-while `review` keeps waiting, is the second such moment.
+The most useful parts of a trace are the rejections: a late result from a crashed attempt, a
+wrong fencing token, a decision that arrives after the run has ended. They show that the
+reducer, not the model, decides what counts. Step 3 of the happy path, where `verify` starts
+on a result nobody has accepted yet while `review` keeps waiting, is the other one worth
+seeing. Once decision 0005 is implemented, a repair scenario will add a third: a failing
+check sends `implement` back and throws out everything that used its old result.
 
-## Audience
+## Who reads it
 
-**Primary: an experienced TypeScript/backend engineer evaluating the project.** They arrive
-from the README, a GitHub link or a post about agent orchestration. They have used Claude
-Code, Codex or Pi, have watched an agent report "all tests pass" when they did not, and are
-tired of agent frameworks that promise autonomy. They know event sourcing, idempotency and
-distributed-systems failure modes (fencing tokens, leases) at least by name.
+Mostly engineers deciding whether the project is worth their time. They come from the README
+or a link, have used Claude Code, Codex or Pi, and have seen an agent claim "all tests pass"
+when they didn't. They know terms like fencing token or idempotency at least by name. They
+want to check within a few minutes that the failure handling is real, and they are put off
+by hype, vague claims and demos that turn out to be mocked. They live in the terminal, in
+`git log`, JSON logs and CI output.
 
-- **Goals:** decide in a couple of minutes whether this design is serious; check that the
-  failure handling is real and not a diagram in a slide deck.
-- **Anxieties and distrust:** hype, vague claims, "AI magic", marketing sites for code that
-  does not exist yet, demos that are secretly mocked.
-- **Daily tools:** terminal, editor, GitHub, `git log`, JSON logs, CI output.
-- **What reads as quality to them:** exactness (real IDs, real hashes, real error codes),
-  honest status, information density that respects them, keyboard support, a page that loads
-  instantly and has no cookie banner.
+Contributors and the maintainer also use the page to check that a reducer change produces the
+trace they expect; the Pages workflow regenerates it on every push to `main`.
 
-**Secondary: contributors and the maintainer**, who use the viewer to check that a reducer
-change produces the trace they expect (the Pages workflow regenerates it on every push).
+Typical visits:
 
-## Key journeys
+1. Arrive from the README and read the happy path from top to bottom.
+2. Switch to retry and fencing and read why the rejected events were rejected.
+3. Open a link to one event (`#retry-and-fencing/6`) from an issue or chat, maybe on a phone.
+4. Look at the raw event and copy an ID.
 
-1. Land from the README, understand what a trace is, press Play or step with the arrow keys
-   through the happy path.
-2. Switch to *Retry and fencing*, find the rejected events, read why they were rejected.
-3. Open a deep link (`#retry-and-fencing/6`) shared in an issue or chat, possibly on a phone.
-4. Inspect the raw event and the commands for one step, copy an ID.
+## What the page should feel like
 
-## Brand traits
+Exact, plain and quiet. Every mark stands for something in the data. It says what is built
+and what isn't. Colour appears only where it means something. Terms are explained where they
+first matter. Tools in this space (LangGraph Studio, Temporal's UI, Inngest, Trigger.dev,
+GitHub Actions) get some things right: a status per task over time, a list of events in order,
+details for the selected one, raw JSON close by, and dark mode. The page keeps those. It
+avoids what agent tools tend to add: dark canvases with glowing status colours, gradients,
+cards with shadows, status shown by colour alone, and marketing headlines on top of a tool.
 
-| Trait | Not |
-| --- | --- |
-| Rigorous: every mark on the page corresponds to data | Pedantic: raw JSON as the main interface |
-| Candid: says what is built and what is not | Self-deprecating or apologetic |
-| Calm: quiet surfaces, colour only where it carries state | Sterile or grey-on-grey |
-| Mechanical: deterministic, inspectable, repeatable | Retro-kitsch or cosplay of machinery |
-| Exact: real identifiers, typed reasons | Cryptic: jargon without a legend |
+## Why the previous version was replaced
 
-## Market observations
+The previous version (a "signal-box panel") looked like many generated pages: off-white
+paper, small spaced-out capitals as labels, numbered tabs, a heavy rule over every panel and a
+slogan as the headline. Its railway idea existed only in the stylesheet comments. It showed
+one step at a time behind a Play button, when readers want to see the whole run. A rejected
+event was one row among fourteen that looked almost the same. The node graph took the most
+space and said the least, with two or three boxes and an arrow.
 
-Closest alternatives and adjacent tools: LangGraph Studio, Temporal's web UI, Inngest and
-Trigger.dev run views, CrewAI and AutoGen dashboards, GitHub Actions run graphs.
+## What stays
 
-- **Category conventions worth honouring:** a node graph with status colours; a chronological
-  event list; a detail pane for the selected event; raw JSON one click away; dark mode.
-- **Conventions to break:** near-black canvases with neon status glows and purple accents;
-  rounded "cards" with drop shadows; status shown only by colour; timelines that hide *why*
-  something happened; marketing heroes on top of developer tools. Agent frameworks in
-  particular dress up in gradients and sparkles, which is exactly the hype this audience
-  distrusts.
-
-## What to keep
-
-- The static, dependency-free architecture: three files, one `fetch`, no build step.
-- The data contract (`trace.json` format 1) and the principle that the page only *displays*
-  reducer output.
-- Hash deep links `#<scenario>/<step>` and arrow-key stepping.
-- The seed of the concept: the old stylesheet already called status markers *lamps*.
-- The copy's plain, exact tone and the footer's provenance line (replay matches live state).
-
-## Current weaknesses
-
-- On a phone the graph is scaled to about 30%: node text is 5–6 px and unreadable.
-- Colour is the only status channel; violet and red/green pairs fail for colour-blind readers.
-- The timeline is a strip of 150 px cells that scrolls sideways; rejected events are only a
-  red top border, and the node an event concerns is not shown.
-- The step panel scrolls away from the graph; long hashes are clipped in the JSON block and
-  truncated to 19 characters in commands.
-- Tabs wrap into ragged lines because scenario titles are sentences.
-- The whole step panel is an `aria-live` region, so screen readers re-read the JSON on
-  every step.
-- Changing the hash on an open page (back button, pasted link) does nothing.
-- Visually generic: default rounded panels, a typeface common to thousands of templates, and
-  no idea tying the look to the product.
+- Three static files, one `fetch`, no build step, no dependencies.
+- The data format (`trace.json` format 1), and the rule that the page only displays it.
+- Links to a single event (`#<scenario>/<step>`), following the address when it changes, and
+  keyboard use.
+- A shape for every task state, so colour is never needed to tell states apart.
+- The replay check in the footer.
 
 ## Constraints
 
-- GitHub Pages, static files, `site/` uploaded as-is; `trace.json` is generated in CI and
-  gitignored.
-- `site/app.js` is linted and formatted by Biome (`npm run check` must pass).
-- No new runtime dependencies; web fonts only from Google Fonts (OFL).
-- WCAG 2.2 AA, full keyboard use, `prefers-reduced-motion`, `prefers-color-scheme`.
-- Honesty rule from AGENTS.md: never imply persistence, execution or a model call that does
-  not exist.
-- README screenshots in `docs/images/` show the viewer and must be regenerated with it.
+- GitHub Pages serves `site/` as it is. `trace.json` is generated in CI and not committed.
+- Biome lints and formats `site/`, and `npm run check` must pass.
+- No web fonts or libraries: system fonts only, so the page loads at once.
+- WCAG 2.2 AA, full keyboard use, light and dark schemes. Nothing animates.
+- Never suggest that saving state, running workers or calling a model already works. No
+  hand-written or made-up traces on the page.
+- The README screenshots in `docs/images/` show the viewer and are regenerated with it.
 
-## Assumptions log
+## Assumptions
 
-| Assumption | Evidence | Confidence |
+| Assumption | Why we think so | Confidence |
 | --- | --- | --- |
-| Primary visitors are engineers evaluating the project, arriving from GitHub | README links the viewer as the tour; repo is pre-release; vocabulary (fencing, reducer, idempotency) | High |
-| Most visits are on desktop, but deep links get opened on phones | Links are shared in issues and chats; no evidence either way on ratio | Medium |
-| Dark mode matters | Developer audience; the old site already supported it | High |
-| Trace format 1 and its three scenarios stay stable for a while | `formatVersion: 1`; scenarios are asserted with `expect` in `trace.ts` | High |
-| Scenario titles follow "Name: description" | All three do; the viewer falls back to the whole title if not | Medium |
-| A new visitor does not know what a fencing token is | Only systems engineers use the term; the notes explain it in context | Medium |
-| Readers will accept a railway-signalling visual idea without it being explained | The idea is carried by form (lamps, track, register), never by labels or pictures | Medium |
-| Showing an edge as "condition met" is display, not state computation | It reads the node snapshot fields the reducer produced; nothing is scheduled or decided | High |
-| The number of nodes per scenario stays small (≤ 6) | Current traces have 2–3; the layout still works up to about 4 per rank | Medium |
+| Most readers are engineers looking at the project from GitHub | The README links the page as its tour; the project is pre-release | High |
+| Most visits are on a desktop, but shared links get opened on phones | Links are shared in issues and chats; there is no data either way | Medium |
+| Dark mode matters | Developer audience; the page has always had it | High |
+| The format and the three scenarios stay as they are until decision 0005 is implemented | `formatVersion: 1`; `trace.ts` asserts the scenarios; 0005 adds fields and a version bump | High |
+| Readers may not know what a fencing token is | Mostly systems engineers use the term; the notes explain it where it appears | Medium |
+| Fading unchanged cells is display, not working out state | It compares two snapshots the reducer wrote; nothing is scheduled or decided | High |
+| Runs stay short enough for one column per event (up to about 30) | Current traces have 8 to 14 events; a repair trace would have about 20; wider tables scroll | Medium |
 
-## Design direction
+## The design
 
-The organising question: what does *agents propose, the harness decides* look like, in a
-form that grew out of the product's own mechanics?
+The whole run is on one page, laid out like a log with a table above it, much like the output
+of the tools these readers already use.
 
-### Direction A: Interlocking (chosen)
+- **The table.** One row per task, then a row for the run and one for the reducer's answer;
+  one column per event. A cell that didn't change since the previous event is drawn faint.
+  A rejected event is a shaded column of faint cells with a red ✗ in the reducer row, so
+  "a rejected event changes nothing" can be seen at a glance.
+- **The log.** One line per event: number, time since the start, event type, task, details,
+  and the outcome. Attempts are called `implement#2` rather than by their hash, so a late
+  result from `implement#1` is easy to spot. The full hashes stay in the raw event. Rejected
+  events are always open. Selecting a line or a column opens that event, with the script's
+  note, the reducer's answer and commands, and the event as sent.
+- **Type.** The system sans-serif for sentences and the system monospace for anything that is
+  data. No capitals-as-labels and no display type.
+- **Colour.** Black on white, reversed in dark mode, and red only for rejections. The
+  selected event gets a pale highlight. Each state has its own glyph: `·` pending, `○` ready,
+  `●` running, `◐` result waiting for a decision, `✓` accepted, `✗` rejected, failed or out
+  of attempts, `⊘` cancelled. The legend lists only the glyphs a scenario uses.
+- **Layout.** One column: header, two short paragraphs with the status, the list of
+  scenarios with event and rejection counts, then the facts, the table and the log. On a
+  phone the table scrolls sideways on its own and log lines wrap.
+- **Left out.** Playback, animation, cards, shadows, gradients, slogans, and anything that
+  needs a metaphor explained.
 
-**Concept.** A railway signal box. The signaller *requests* a route; the interlocking, a
-deterministic machine, *refuses* any request that would be unsafe, whatever the signaller
-wants. On single-track lines, only the driver holding the physical token for a section may
-enter it: that is a fencing token, invented in the 1870s. Every train is written into the
-box's register. auto-pi-lot's reducer is the interlocking, the model is the signaller, the
-event journal is the register. The viewer becomes a mimic panel: a flat diagram board with
-lamp indicators and track that lights when a route's condition is met, beside a ruled
-register of every event.
+### Decision 0005
 
-**Why it fits.** It makes the product's thesis visible without saying it, it is a
-pre-digital, fully deterministic safety system (credible to a distrustful engineer), and it
-evolves the existing "lamp" vocabulary rather than discarding it.
+Decision 0005 (a failing check repairs the task that produced the result and throws out
+whatever used it) is accepted but not built. The page is ready for its states without
+guessing at its field names:
 
-- **Typography.** Archivo (variable width and weight, OFL). Its width axis plays the role of
-  engraved panel lettering: condensed caps for labels, normal width for reading text, a wide
-  heavy cut for the wordmark and headline. Spline Sans Mono for every identifier, event type
-  and payload: it is clear at small sizes and less familiar than the usual developer monos.
-  Scale on a 1.25 ratio from a 16 px base: 12.8 / 14 / 16 / 20 / 25 / 31 / 39 / 49 px.
-- **Colour.** Panel enamel (warm off-white) and ink; everything else is a signal aspect with
-  one job. Green *clear* = accepted. Yellow *caution* = reserved or running. Red *danger* =
-  rejected or failed. Lunar white, the aspect that means "proceed, but not a clear route",
-  = result proposed but not yet accepted. Grey = pending or cancelled. No accent colour,
-  no brand colour: the ink is the brand. Night panel (dark mode) swaps enamel for charcoal.
-- **Lamp glyphs.** Each state also has its own shape, so colour is never the only channel:
-  empty ring (pending), ring with centre dot (reserved), solid (running), half-filled
-  (result awaiting acceptance), solid with a check notch (accepted), solid with a bar
-  (rejected or failed), ring with a slash (cancelled).
-- **Layout.** A 12-column grid, dense. The board and the register share the left eight
-  columns, the step detail is pinned in the right four so the explanation never scrolls away
-  from the diagram. On phones the graph turns vertical (tracks run downward), so node text
-  stays at reading size, and the transport controls move to a bar under the thumb.
-- **Motion.** Lamps switch aspect instantly, as real lamps do; a changed node's frame
-  thickens and tracks change colour over 160 ms, and that is all. No entrance animations.
-  `prefers-reduced-motion` sets every duration to zero.
-- **Signature details.** (1) Track that lights up when its condition is met, so you *see*
-  why `verify` may start and `review` may not. (2) The register: every event on a ruled line
-  with its relative time, node and verdict; rejected lines carry the typed reason in red.
-  (3) Permits drawn as token slots, filled while a worker holds one.
-- **Against the category.** Light by default, flat, square-cornered, no glow, no accent
-  gradient, no cards: rules and panels instead.
-- **Refuses.** Illustrations of trains, levers or signals; skeuomorphic bevels; any railway
-  word in the interface copy. The metaphor is structure, not decoration.
+- The states `verifying` (`◒`, result waiting for its checks) and `invalidated` (`↺`, result
+  thrown out, waiting again) have glyphs. A task that runs out of attempts shares `✗`, and
+  the cell's description gives the reason.
+- Commands the page doesn't know (such as a dispatch that names the attempt it repairs) are
+  shown with their type and fields instead of being dropped. Proper wording follows once the
+  fields exist.
+- A repair scenario appears only when `auto-pi-lot trace` produces one from the real
+  reducer. A hand-written example was used to try out this design and is not published.
 
-### Direction B: Proof sheet
+## Notes for changing the code
 
-**Concept.** Each trace as a typeset proof: numbered steps as lines of a derivation, the
-reducer's verdict as the justification in the right margin, rejections as struck-through
-lines with the rule they violate. Rigour as the aesthetic of a mathematics paper.
-
-- **Typography.** Newsreader for text, Newsreader small caps for step labels, IBM Plex Mono
-  for terms.
-- **Colour.** Paper and ink, one red for struck lines; state shown by typography (roman,
-  italic, struck) rather than colour.
-- **Layout.** A single reading column with wide margins for marginalia; the graph as a
-  small figure that updates beside the current line.
-- **Motion.** None beyond scrolling the current line into view.
-- **Signature.** Marginal justifications ("by fencing, token 1 < 2"); a QED mark when replay
-  matches live state.
-- **Against the category.** No dashboard at all.
-- **Refuses.** Colour-coded status, panels, controls beyond next and previous.
-
-### Direction C: Flight recorder
-
-**Concept.** The name's pun: an autopilot's flight data recorder. Events on a scrolling
-strip chart, node states as instrument annunciators, B612 (the Airbus cockpit typeface) on a
-dark display.
-
-- **Typography.** B612 and B612 Mono.
-- **Colour.** Dark display, amber/green/red annunciator colours, cyan for selection.
-- **Layout.** Full-bleed instrument panel; timeline as a horizontal strip chart.
-- **Motion.** Strip chart scrolls continuously during playback.
-- **Signature.** Annunciator panel that lights per node.
-- **Against the category.** A literal instrument rather than a web dashboard.
-- **Refuses.** Light mode as the default.
-
-### Choice
-
-**A, Interlocking.** It is the only direction whose metaphor *is* the product's mechanism
-(route request versus interlocking, token block versus fencing token, train register versus
-event journal), so it explains the harness instead of decorating it. B is beautiful and
-honest, but it hides the graph, which is half of what the traces demonstrate, and asks for
-more reading than an evaluating engineer will give. C is built on a pun about autonomy, the
-very thing the product constrains, and drifts straight into the dark-display, glowing-status
-look this category already overuses.
-
-**What A trades away:** B's typographic quietness (A has more simultaneous elements) and
-C's instant "cockpit" drama. It also relies on a metaphor most visitors will never consciously
-name, so every element must work without it: lamps are labelled by a legend, tracks by their
-condition, the register by column headings.
-
-## Implementation notes
-
-- Tokens live at the top of `site/style.css` (type, space, colour roles for light and dark,
-  rules, radii, motion). Lamp glyphs are SVG symbols in `index.html`, shared by the board and
-  the legend.
-- Functional changes, all small: the page follows `hashchange` (back button and pasted
-  links now work on an open page); the graph lays out vertically on narrow screens; the live
-  region is limited to the step note and verdict; edges show whether their condition is met;
-  commands show identifiers middle-truncated instead of cut off, with the full value in a
-  tooltip; the verdict names which nodes changed, and says so when a rejected event left the
-  run state unchanged (only when the snapshots are identical);
-  Home and End jump to the first and last step. The data contract is unchanged.
+- Colours are variables at the top of `site/style.css`. Glyphs are text in `site/app.js`
+  (`ASPECTS`), each with hidden text for screen readers.
+- Screen readers hear one short sentence about the selected event, never the raw JSON.
+- `←` `→` or `j` `k` move between events, `Home` and `End` jump; `↑` `↓` still scroll the
+  page. The selected line and column are scrolled into view.
