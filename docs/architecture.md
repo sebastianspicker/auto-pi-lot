@@ -32,6 +32,11 @@ For the finished product see the [design document](design.md); for progress see 
   *fencing tokens*; the host's acceptance decisions; and cancellation. `replay(events)` runs
   a saved sequence of events through `decide` to rebuild the state. [Architecture: What runs
   today]
+
+  A rejected result today is retried on the task that was rejected, and tasks that already
+  used it keep their state. [Decision 0005](decisions/0005-producer-targeted-repair.md) changes
+  this: a failing finding will reject and repair the task that produced the result, and redo
+  everything built on it. That change is not implemented yet.
 - **Session interface and Pi adapter.** `CodingSession` is the interface through which the
   rest of the system talks to an AI coding session. It knows nothing about any particular
   model provider. `openPiSession` implements it on top of the pinned version of the Pi
@@ -149,6 +154,8 @@ reducer's behaviour. [Architecture: Repository tooling]
 - The reducer handles one flat plan. Nested plans, budgets and suspension are planned
   extensions of the same reducer, not existing features. [Architecture: What runs today, Where
   new code goes]
+- Verification findings do not yet reach the producing task, and invalidation does not
+  cascade ([decision 0005](decisions/0005-producer-targeted-repair.md), not implemented).
 - "The journal is the source of truth" becomes true only once storage exists (AP-04, AP-05).
   [Architecture: State]
 

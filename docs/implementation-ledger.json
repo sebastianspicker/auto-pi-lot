@@ -1,8 +1,8 @@
 {
   "formatVersion": 1,
-  "planRevision": 3,
-  "planRevisionNotes": "Revision 3 (2026-09-24): packages restructured per decision 0004 (contracts+engine merge into core; pi-adapter+pi-extension merge into pi; storage/worker placeholder packages removed until AP-04/AP-05/AP-08 implement them). Every task's owns path is rewritten to the new tree. AP-01, AP-26 and AP-27 evidence records describe the pre-restructure tree; their fingerprints no longer match the current tree, and a fresh review is required before any status change.",
-  "asOf": "2026-09-24",
+  "planRevision": 4,
+  "planRevisionNotes": "Revision 4 (2026-09-26): decision 0005 adds producer-targeted repair, verifying-node acceptance and cascading invalidation to AP-12 and AP-17 deliverables; no status changes. Revision 3 (2026-09-24): packages restructured per decision 0004 (contracts+engine merge into core; pi-adapter+pi-extension merge into pi; storage/worker placeholder packages removed until AP-04/AP-05/AP-08 implement them). Every task's owns path is rewritten to the new tree. AP-01, AP-26 and AP-27 evidence records describe the pre-restructure tree; their fingerprints no longer match the current tree, and a fresh review is required before any status change.",
+  "asOf": "2026-09-26",
   "project": "auto-pi-lot",
   "purpose": "Canonical implementation work DAG and evidence ledger for the complete local Pi graph harness. Proposed locations and acceptance scenarios are not implemented capabilities.",
   "implementationHandoff": "docs/design.md",
@@ -708,7 +708,10 @@
         "Bind check and review receipts to exact inputs, candidate tree, profile, environment and tool identity.",
         "Implement independent review with a validated assessment proposal; only host policy records acceptance.",
         "Permit interim implementer-requested checks as feedback without removing mandatory final independent gates.",
-        "Invalidate stale receipts and ensure result_ready gates allow verification while accepted consumers remain blocked."
+        "Invalidate stale receipts and ensure result_ready gates allow verification while accepted consumers remain blocked.",
+        "Decision 0005: defer a producer's acceptance until every verifying node has accepted evidence bound to its current candidate; let a failing receipt reject the producer early.",
+        "Decision 0005: only reproducible check failures reject a producer on their own; a model-only fail or unclear review triggers a fresh independent review, and two agreeing reviews settle it.",
+        "Decision 0005: add a counterexample that rejected a producer to the checks required for its later attempts; never remove required checks."
       ],
       "acceptanceScenarios": [
         "AT-05",
@@ -892,7 +895,9 @@
         "Admit immutable graph patches with expected-revision compare-and-swap; retain previous contracts and evidence.",
         "Invalidate affected dependents and preserve still-valid siblings; no refund of lifetime node or spent budget.",
         "Classify repairable failures versus policy denial, root exhaustion and uncertain effects.",
-        "Define GraphPatch for immutable graph revision admission (moved from AP-01 per decision 0004)."
+        "Define GraphPatch for immutable graph revision admission (moved from AP-01 per decision 0004).",
+        "Decision 0005: reject graphs where a verifying node is reachable from its producer through an accepted edge; bind verifying attempts to the producer attempt they consume.",
+        "Decision 0005: repair rejects the producer, carries the rejecting receipt IDs on the next dispatch, and cascades cancellation and invalidation to every transitive consumer without charging their retry allowance."
       ],
       "acceptanceScenarios": [
         "AT-10",

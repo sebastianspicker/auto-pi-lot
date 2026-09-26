@@ -178,8 +178,8 @@ function handleAcceptanceDecided(state: RunState, event: AcceptanceDecidedEvent)
   }
 
   // Rejected. A dependent that already consumed this node's provisional `result_ready`
-  // output keeps its own state: invalidation propagation to dependents is later work
-  // (decision 0001 scopes this reducer to one flat graph without cascading invalidation).
+  // output keeps its own state for now: decision 0005 adds producer-targeted repair and
+  // cascading invalidation (AP-12, AP-17).
   const policy = state.policy as NonNullable<RunState["policy"]>; // guaranteed by decide(): the run has started
   if (node.attemptCount < policy.maxAttemptsPerNode) {
     const attempts = { ...state.attempts, [event.attemptId]: { ...attempt, status: "superseded" as const } };

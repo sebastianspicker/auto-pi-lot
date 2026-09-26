@@ -10,3 +10,4 @@ consequences. Superseded records stay in place with a pointer to their replaceme
 | [0002](0002-validation-issue-model.md) | Validation returns all typed issues | Accepted 2026-09-24 |
 | [0003](0003-port-location.md) | Ports live in the engine; placeholder packages re-export | Superseded by 0004 |
 | [0004](0004-three-packages.md) | Three packages; ports arrive with their implementations | Accepted 2026-09-24 |
+| [0005](0005-producer-targeted-repair.md) | Verification findings repair the producer and invalidate its consumers | Accepted 2026-09-26 |
