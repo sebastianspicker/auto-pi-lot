@@ -26,6 +26,9 @@ code that exists today, see [architecture](architecture.md); for progress, see t
 - **Proposals versus decisions.** Workers propose results; only the host's *acceptance gate*,
   citing recorded evidence, accepts them. A task that checks another task's output may start
   on the unaccepted result; a task that needs trusted input waits for acceptance. [§5]
+- **Findings repair the producer.** When a check or a falsifier finds a defect, the task that
+  produced the result gets a new, bounded attempt with the findings attached, and everything
+  built on the old result is redone. [Decision 0005]
 - **One of everything that must not be duplicated.** One scheduler decides what runs; one
   root budget pays for everything, including sub-plans; one database is the authority on
   state. [§3, §6, §7]
@@ -241,6 +244,19 @@ gate updates the result's acceptance state once the required receipts exist; thi
 circular dependency in the plan. When a child fails, the parent continues through a typed
 binding to that final outcome, never through an invented success. [§5]
 
+A task that reads a producer's result through a `result_ready` dependency is a *verifying node*
+of that producer. The producer is accepted only after every verifying node has accepted
+evidence about its current result, and a plan in which a verifying node also waits for the
+producer's acceptance is rejected, because neither could ever start. A failing finding rejects
+the producer, not the task that found it. The producer then gets a new attempt that carries the
+failing receipts. Every task that used the rejected result, and everything built on those, is
+cancelled or marked `invalidated` and runs again against the new result; these re-runs do not
+use up the verifying nodes' own retries. A failing deterministic check rejects the producer on
+its own. A model's judgment does not: a `fail` or `unclear` review leads to a fresh independent
+review of the same result, and only two reviews that agree settle it. A counterexample that
+caused a rejection becomes a required check for every later attempt of that producer.
+[Decision 0005]
+
 A run moves through `planning → running → verifying → succeeded`, with explicit waiting,
 paused and blocked states, and the final outcomes failed, cancelled and exhausted. `blocked` is
 not final: it carries a typed reason and a permitted way to resolve it, and it is not another
@@ -278,6 +294,7 @@ a worker slot. The number of active child processes and queued tasks stays bound
 | Explorer | Bounded investigation of sources or testing of a hypothesis | Reads and searches within its scope; returns artifacts |
 | Implementer | Proposes edits and repairs | Writes only in its own workspace; may request allowed commands and checks |
 | Verifier | Interprets evidence and points out missing coverage where useful | Actually running the check is a separate deterministic check task |
+| Falsifier | Tries to break the candidate by producing a concrete counterexample | Proposes a test or input; the host runs it as a deterministic check, and only a reproduced failure counts [Decision 0005] |
 | Reviewer | Independently assesses each criterion | Reads the candidate and evidence; cannot edit its way to a pass |
 | Integrator | Resolves how patches interact when reasoning is needed | The host applies candidates one at a time and runs the final checks |
 
@@ -292,6 +309,10 @@ expects, and the remaining allowance. A loop that keeps producing the same outco
 Counters must not reset when context is compacted, a child is created, the system restarts or
 an unrelated sibling succeeds; adapting after a failed child itself counts against the root's
 semantic-repair allowance. [§6]
+
+A semantic repair is a new attempt of the task that produced the wrong result, never a node
+downstream of it, so the plan stays free of cycles. The new attempt receives the receipts that
+rejected the previous one. [Decision 0005]
 
 ## 7. Budget and the lifecycle of a model request
 
@@ -603,6 +624,7 @@ for focused, fault and live tests are added and documented by the work packages 
 | DAG | Directed acyclic graph: a plan whose dependencies contain no circles. |
 | Digest | A hash that identifies content exactly. |
 | Durable | Saved so that it survives a crash or restart. |
+| Falsifier | A role that tries to break a result by producing a counterexample the host can run as a check. |
 | Effect | An action on the outside world: writing files, running commands, calling a model. |
 | Fencing token | A number that increases with each new attempt; stale messages carrying a lower number are rejected. |
 | Graph revision | A numbered, unchangeable version of a plan's content. |
@@ -622,6 +644,7 @@ for focused, fault and live tests are added and documented by the work packages 
 | Semantic repair | Another attempt to fix a result that was wrong, as opposed to one that was merely malformed. |
 | Supervisor | The local background process that will run the host for one repository. |
 | Task graph | A plan: tasks and their dependencies. |
+| Verifying node | A task that reads another task's result before it is accepted, in order to check it. The producer's acceptance waits for it. |
 | WAL mode | Write-ahead logging, an SQLite mode that lets reads continue while writing. |
 | Work package (AP-xx) | One numbered unit of planned work in the ledger. |
 | Worktree | A separate Git working copy, used so parallel writers do not collide. It is not a security sandbox. |

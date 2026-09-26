@@ -35,7 +35,7 @@ inside it that drives the decisions and carries them out.
 
 ## See it working: the trace viewer
 
-The [trace viewer](https://sebastianspicker.github.io/auto-pi-lot/) replays real output from
+The [trace viewer](https://sebastianspicker.github.io/auto-pi-lot/) shows real output from
 the reducer. A scripted host sends *events* (messages such as "this attempt started" or
 "this worker proposes a result"), and the reducer decides what happens next. Nothing in the
 viewer calls a model [README: Tour].
@@ -47,9 +47,9 @@ viewer calls a model [README: Tour].
 The example plan has three tasks: *implement*, then *verify*, then *review*. The link from
 implement to verify only **needs a result**, so the verifier may start on a result that
 nobody has accepted yet; that is its job. The link from verify to review **needs an accepted
-result**, so the reviewer waits until the host has accepted the verification. Each step shows
-the event, whether the reducer applied it, and the instructions (*commands*) it hands back to
-the host. [README: A run, step by step]
+result**, so the reviewer waits until the host has accepted the verification. Each line of the
+log shows the event, whether the reducer applied it, and the instructions (*commands*) it hands
+back to the host; the matrix above it shows every task's state after each event. [README: A run, step by step]
 
 ### Retries and stale workers
 
@@ -59,8 +59,8 @@ When an attempt fails, the reducer schedules a new attempt with a new ID and a h
 *fencing token*, a number that goes up with every new attempt. A late message from the old
 attempt, or one carrying the wrong number, is rejected and changes nothing. This protects
 against a crashed or slow worker overwriting the work of its replacement [Design §10;
-Acceptance scenarios AT-19]. Rejected events are marked in red in the viewer's journal,
-together with the typed reason. [README: Retries and stale workers]
+Acceptance scenarios AT-19]. In the viewer, a rejected event is a shaded matrix column in
+which no task's state changes, and its log line carries the typed reason in red. [README: Retries and stale workers]
 
 ### Cancellation
 

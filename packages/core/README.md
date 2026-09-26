@@ -103,6 +103,10 @@ reducer-internal `Command`s (`run/commands.ts`: `dispatch`, `evaluate_acceptance
 events. `replay(events)` (`run/replay.ts`) folds `decide` over a committed event log; this is
 the same code path recovery uses to rebuild a run's state.
 
+A rejected attempt is retried on the node the decision names, and dependents that consumed
+its `result_ready` output keep their state. [Decision 0005](../../docs/decisions/0005-producer-targeted-repair.md)
+(accepted, not implemented) moves repair to the producer and cascades invalidation.
+
 Acceptance is idempotent per attempt: once an `acceptance_decided` has settled an attempt
 (accepted or rejected), a later decision for that same attempt is rejected rather than
 re-applied. Cancellation reconciles outstanding acceptance evaluations before becoming
