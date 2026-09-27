@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { type GraphSpec, GraphSpecSchema, parseDto, parseGraphSpec, validateGraph } from "../src/index.js";
+import {
+  type GraphSpec,
+  GraphSpecSchema,
+  parseDto,
+  parseGraphSpec,
+  topologicalOrder,
+  validateGraph,
+} from "../src/index.js";
 
 const graph: GraphSpec = {
   schemaVersion: 1,
@@ -65,6 +72,65 @@ test("rejects cycles and self edges", () => {
     () => parseGraphSpec({ ...graph, edges: [{ from: "review", to: "review", condition: "accepted" }] }),
     /self_edge/,
   );
+});
+
+test("distinct edge endpoint pairs cannot collide through ID delimiters", () => {
+  const nodes = ["a->b", "c", "a", "b->c"].map((id) => ({
+    ...graph.nodes[0],
+    id,
+    objective: `Do ${id}`,
+  }));
+  const result = validateGraph({
+    ...graph,
+    id: "graph-delimiter-ids",
+    runId: "run-delimiter-ids",
+    nodes,
+    edges: [
+      { from: "a->b", to: "c", condition: "accepted" },
+      { from: "a", to: "b->c", condition: "accepted" },
+    ],
+  });
+
+  assert.equal(result.ok, true, result.ok ? undefined : JSON.stringify(result.issues));
+});
+
+test("validates a deep acyclic graph without exhausting the call stack", () => {
+  const nodeCount = 20_000;
+  const nodes = Array.from({ length: nodeCount }, (_, index) => ({
+    ...graph.nodes[0],
+    id: `node-${index}`,
+    objective: `Do node ${index}`,
+  }));
+  const edges = Array.from({ length: nodeCount - 1 }, (_, index) => ({
+    from: `node-${index}`,
+    to: `node-${index + 1}`,
+    condition: "accepted",
+  }));
+
+  const result = validateGraph({ ...graph, id: "graph-deep", runId: "run-deep", nodes, edges });
+  assert.equal(result.ok, true, result.ok ? undefined : JSON.stringify(result.issues));
+  if (result.ok) {
+    const order = topologicalOrder(result.graph);
+    assert.equal(order.length, nodeCount);
+    assert.equal(order[0], "node-0");
+    assert.equal(order[nodeCount - 1], `node-${nodeCount - 1}`);
+  }
+});
+
+test("topological order applies declaration order when an earlier node becomes ready", () => {
+  const ordered = parseGraphSpec({
+    ...graph,
+    id: "graph-order",
+    runId: "run-order",
+    nodes: [
+      { ...graph.nodes[0], id: "a" },
+      { ...graph.nodes[0], id: "b" },
+      { ...graph.nodes[0], id: "c" },
+    ],
+    edges: [{ from: "a", to: "b", condition: "accepted" }],
+  });
+
+  assert.deepEqual(topologicalOrder(ordered), ["a", "b", "c"]);
 });
 
 test("enforces graph ownership by depth", () => {

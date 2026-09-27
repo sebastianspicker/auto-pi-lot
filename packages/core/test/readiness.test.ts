@@ -158,6 +158,29 @@ test("readiness is returned in topological order", () => {
   );
 });
 
+test("topological ordering accounts for settled predecessors outside the ready set", () => {
+  const graph = parseGraphSpec({
+    schemaVersion: 1,
+    id: "graph-ready-order",
+    runId: "run",
+    depth: 0,
+    revision: 1,
+    nodes: ["consumer", "independent", "producer"].map((id) => ({
+      id,
+      role: "explorer",
+      objective: `Investigate ${id}`,
+      acceptanceCriteria: ["Evidence returned"],
+      limits: { maxTokens: 1000, maxToolCalls: 10 },
+    })),
+    edges: [{ from: "producer", to: "consumer", condition: "accepted" }],
+  });
+
+  assert.deepEqual(
+    getReadyNodes(graph, new Map([["producer", accepted]])).map((node) => node.id),
+    ["independent", "consumer"],
+  );
+});
+
 test("AT-09: isDependencySatisfied truth table", () => {
   assert.equal(isDependencySatisfied("accepted", { execution: "result_ready", disposition: "accepted" }), true);
   assert.equal(isDependencySatisfied("accepted", { execution: "result_ready", disposition: "unverified" }), false);

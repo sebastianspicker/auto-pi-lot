@@ -240,6 +240,14 @@ test("an event for the wrong run is rejected", () => {
   assert.equal(result.state, first.state);
 });
 
+test("run_started rejects a graph belonging to a different run", () => {
+  const state = initialState();
+  const result = decide(state, runStarted("some-other-run", soloGraph));
+  assert.equal(result.rejection?.code, "wrong_run");
+  assert.equal(result.state, state);
+  assert.deepEqual(result.commands, []);
+});
+
 test("a non-run_started event before run_started is rejected", () => {
   const state = initialState();
   const result = decide(state, cancelRequested("run-solo"));
@@ -279,6 +287,40 @@ test("an invalid graph is rejected and never starts the run", () => {
   });
   assert.equal(result.rejection?.code, "invalid_graph");
   assert.equal(result.state, state);
+});
+
+test("node IDs that name object prototype properties remain ordinary nodes", () => {
+  const prototypeGraph = parseGraphSpec({
+    schemaVersion: 1,
+    id: "graph-prototype-ids",
+    runId: "run-prototype-ids",
+    depth: 0,
+    revision: 1,
+    nodes: [node("__proto__"), node("constructor"), node("toString")],
+    edges: [],
+  });
+
+  const result = decide(
+    initialState(),
+    runStarted("run-prototype-ids", prototypeGraph, { maxConcurrent: 3, maxAttemptsPerNode: 1 }),
+  );
+
+  assert.equal(result.rejection, undefined);
+  assert.deepEqual(
+    dispatchCommands(result.commands).map((command) => command.nodeId),
+    ["__proto__", "constructor", "toString"],
+  );
+  for (const nodeId of ["__proto__", "constructor", "toString"]) {
+    assert.ok(Object.hasOwn(result.state.nodes, nodeId));
+    assert.equal(result.state.nodes[nodeId]?.execution, "ready");
+  }
+});
+
+test("prototype property names do not masquerade as known attempt IDs", () => {
+  const started = apply(initialState(), runStarted("run-solo", soloGraph));
+  const result = decide(started.state, resultProposed("run-solo", "toString", 1));
+  assert.equal(result.rejection?.code, "unknown_attempt");
+  assert.equal(result.state, started.state);
 });
 
 test("a mismatched fencing token is rejected without mutating state", () => {

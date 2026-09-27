@@ -46,6 +46,10 @@ function accept(state: RunState, commands: readonly Command[] = []): DecideResul
   return { state, commands };
 }
 
+function ownValue<T>(record: Readonly<Record<string, T>>, key: string): T | undefined {
+  return Object.hasOwn(record, key) ? record[key] : undefined;
+}
+
 function toNodeStatusMap(nodes: Readonly<Record<string, NodeRunState>>): Map<string, NodeStatus> {
   const map = new Map<string, NodeStatus>();
   for (const [nodeId, node] of Object.entries(nodes)) {
@@ -73,9 +77,17 @@ function handleRunStarted(state: RunState, event: RunStartedEvent): DecideResult
     const message = validated.issues.map((issue) => `${issue.code}: ${issue.message}`).join("; ");
     return reject(state, "invalid_graph", message);
   }
+  if (validated.graph.runId !== event.runId) {
+    return reject(
+      state,
+      "wrong_run",
+      `Graph run ${JSON.stringify(validated.graph.runId)} does not match event run ${JSON.stringify(event.runId)}`,
+    );
+  }
 
-  const nodes: Record<string, NodeRunState> = {};
-  for (const node of validated.graph.nodes) nodes[node.id] = freshNodeState();
+  const nodes: Record<string, NodeRunState> = Object.fromEntries(
+    validated.graph.nodes.map((node) => [node.id, freshNodeState()]),
+  );
 
   return accept({
     runId: event.runId,
@@ -91,7 +103,7 @@ function handleRunStarted(state: RunState, event: RunStartedEvent): DecideResult
 }
 
 function handleAttemptDispatched(state: RunState, event: AttemptDispatchedEvent): DecideResult {
-  const node = state.nodes[event.nodeId];
+  const node = ownValue(state.nodes, event.nodeId);
   if (node === undefined) return reject(state, "invalid_transition", `Unknown node: ${event.nodeId}`);
   if (
     node.execution !== "ready" ||
@@ -124,7 +136,7 @@ function handleAttemptDispatched(state: RunState, event: AttemptDispatchedEvent)
 }
 
 function handleResultProposed(state: RunState, event: ResultProposedEvent): DecideResult {
-  const attempt = state.attempts[event.attemptId];
+  const attempt = ownValue(state.attempts, event.attemptId);
   if (attempt === undefined) return reject(state, "unknown_attempt", `Unknown attempt: ${event.attemptId}`);
   if (attempt.fencingToken !== event.fencingToken) {
     return reject(state, "stale_fencing_token", `Stale fencing token on attempt ${event.attemptId}`);
@@ -144,7 +156,7 @@ function handleResultProposed(state: RunState, event: ResultProposedEvent): Deci
 }
 
 function handleAcceptanceDecided(state: RunState, event: AcceptanceDecidedEvent): DecideResult {
-  const attempt = state.attempts[event.attemptId];
+  const attempt = ownValue(state.attempts, event.attemptId);
   if (attempt === undefined) return reject(state, "unknown_attempt", `Unknown attempt: ${event.attemptId}`);
   if (attempt.nodeId !== event.nodeId) {
     return reject(state, "invalid_transition", `Attempt ${event.attemptId} does not belong to node ${event.nodeId}`);
@@ -210,7 +222,7 @@ function handleAttemptTerminated(
   fencingToken: number,
   category: FailureCategory,
 ): DecideResult {
-  const attempt = state.attempts[attemptId];
+  const attempt = ownValue(state.attempts, attemptId);
   if (attempt === undefined) return reject(state, "unknown_attempt", `Unknown attempt: ${attemptId}`);
   if (attempt.fencingToken !== fencingToken) {
     return reject(state, "stale_fencing_token", `Stale fencing token on attempt ${attemptId}`);
@@ -286,7 +298,7 @@ function handleCancelRequested(state: RunState, _event: CancelRequestedEvent): D
 }
 
 function handleAttemptStopped(state: RunState, event: AttemptStoppedEvent): DecideResult {
-  const attempt = state.attempts[event.attemptId];
+  const attempt = ownValue(state.attempts, event.attemptId);
   if (attempt === undefined) return reject(state, "unknown_attempt", `Unknown attempt: ${event.attemptId}`);
   if (attempt.status !== "stopping")
     return reject(state, "invalid_transition", `Attempt ${event.attemptId} is not stopping`);
@@ -395,7 +407,7 @@ function guardEvent(state: RunState, event: JournalEvent): DecideResult | null {
   if (typeof event !== "object" || event === null) {
     return reject(state, "invalid_transition", `Malformed event: ${JSON.stringify(event)}`);
   }
-  if (state.appliedEventIds[event.eventId] === true) {
+  if (ownValue(state.appliedEventIds, event.eventId) === true) {
     return reject(state, "duplicate_event", `Event already applied: ${event.eventId}`);
   }
   if (event.type === "run_started") return null; // handleRunStarted checks already_started itself
