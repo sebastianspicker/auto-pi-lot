@@ -13,10 +13,12 @@ export function getReadyNodes(graph: ValidatedGraph, states: ReadonlyMap<string,
 
   const ready = new Set<string>();
   for (const node of graph.nodes) {
-    if (statusOf(node.id).execution !== "pending") continue;
-    const incoming = graph.edges.filter((edge) => edge.to === node.id);
-    const satisfied = incoming.every((edge) => isDependencySatisfied(edge.condition, statusOf(edge.from)));
-    if (satisfied) ready.add(node.id);
+    if (statusOf(node.id).execution === "pending") ready.add(node.id);
+  }
+  for (const edge of graph.edges) {
+    if (ready.has(edge.to) && !isDependencySatisfied(edge.condition, statusOf(edge.from))) {
+      ready.delete(edge.to);
+    }
   }
 
   return topologicalOrder(graph)
