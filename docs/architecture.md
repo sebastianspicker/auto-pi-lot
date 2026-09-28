@@ -5,24 +5,14 @@ nothing else: they check plans, decide what should happen next in a run, and con
 sessions. Nothing saves state to disk, starts worker processes or calls a model yet. The code
 is split so that the decision-making part (`core`) can never reach into the Pi-specific part,
 and the linter checks this on every change. New capabilities that act on the world, such as
-storage or worker processes, will go into new packages that depend on `core`. [Architecture:
-What runs today, Packages]
-
-*About this page.* It is a plain-language edition of the architecture page for engineers and
-engineering leads who want to understand what the code does today and how it is organised,
-without knowing its internals. Code names are kept in `code font` so the page still maps onto
-the source. Bracketed references such as [Architecture: State] point to the section of the
-original document this edition was rewritten from; the originals are in the Git history at
-commit `bf04bd0`. Terms in *italics* on first use are defined in the [glossary](#glossary).
-For the finished product see the [design document](design.md); for progress see the
-[roadmap](roadmap.md) and the [ledger](implementation-ledger.json).
+storage or worker processes, will go into new packages that depend on `core`.
 
 ## What runs today
 
 - **Plan checking.** A plan (*task graph*) arrives as untrusted data. It is read strictly
   against a schema, then checked for meaning. The result is either a `ValidatedGraph`, a type
   that only the checker can produce, or a list of every problem found, each with a typed
-  reason. [Architecture: What runs today]
+  reason.
 - **The run reducer.** `decide(state, event) → { state, commands, rejection? }` is the one
   function that decides how a run proceeds. It is *pure* (it only computes; it has no side
   effects) and *total* (it returns an answer for every possible input). It currently handles
@@ -30,28 +20,24 @@ For the finished product see the [design document](design.md); for progress see 
   starting an attempt, under a limit on how many run at once; a bounded number of retries;
   the two kinds of dependency ("needs a result" and "needs an accepted result");
   *fencing tokens*; the host's acceptance decisions; and cancellation. `replay(events)` runs
-  a saved sequence of events through `decide` to rebuild the state. [Architecture: What runs
-  today]
+  a saved sequence of events through `decide` to rebuild the state.
 
   A rejected result today is retried on the task that was rejected, and tasks that already
-  used it keep their state. [Decision 0005](decisions/0005-producer-targeted-repair.md) changes
-  this: a failing finding will reject and repair the task that produced the result, and redo
-  everything built on it. That change is not implemented yet.
+  used it keep their state.
 - **Session interface and Pi adapter.** `CodingSession` is the interface through which the
   rest of the system talks to an AI coding session. It knows nothing about any particular
   model provider. `openPiSession` implements it on top of the pinned version of the Pi
   software development kit (SDK) and translates Pi's events into neutral ones.
-  [Architecture: What runs today]
 - **Pi extension.** The `/graph` command reports the development status. It starts nothing.
 - **Command-line tool.** `demo` prints a checked example plan, the order its tasks could run
   in, and which tasks are ready to start. `trace` runs three scripted scenarios through the
   real reducer and prints every step as JSON; the
   [trace viewer](https://sebastianspicker.github.io/auto-pi-lot/) (`site/`) replays that
-  output. [Architecture: What runs today]
+  output.
 
 Nothing here saves state, launches workers or calls a model. Actions on the outside world
 exist only as the reducer's *commands* (instructions for the host) and as the Pi session
-factory that is passed in from outside. [Architecture: What runs today]
+factory that is passed in from outside.
 
 ## Packages
 
@@ -70,12 +56,12 @@ factory that is passed in from outside. [Architecture: What runs today]
 
 All dependencies point toward `core`, and `core` depends on no other package in the
 repository. No package uses `cli`. Because `pi` can only see the session interface, code tied
-to the Pi SDK cannot reach into run decisions. [Architecture: Packages]
+to the Pi SDK cannot reach into run decisions.
 
 ### How the rules are enforced
 
 Each rule is checked automatically by the Biome linter when `npm run lint` runs, so a
-violation fails the build rather than depending on review. [Architecture: Enforcement]
+violation fails the build rather than depending on review.
 
 | Rule | Checked by |
 | --- | --- |
@@ -90,7 +76,7 @@ violation fails the build rather than depending on review. [Architecture: Enforc
 The reducer decides; the *host* acts. *Journal events* (defined in `core/src/run/events.ts`)
 are versioned data formats. The host creates and timestamps them; they never come from model
 output. Commands (`core/src/run/commands.ts`) are requests for actions. The host is expected
-to work in this order [Architecture: The reducer protocol]:
+to work in this order:
 
 1. **Check the input.** Parse every incoming event with `parseJournalEvent`; `decide` only
    ever receives checked events.
@@ -106,17 +92,16 @@ to work in this order [Architecture: The reducer protocol]:
    `acceptance_decided`.
 
 Recovery after a crash means replaying the saved event log, then reconciling any actions that
-were in progress ([decision 0001](decisions/0001-engine-pure-reducer.md)). A worker's result
-is only a proposal: only an `acceptance_decided` event, produced by the host's *acceptance
-gate*, can change a result to `accepted`. [Architecture: The reducer protocol]
+were in progress. A worker's result is only a proposal: only an `acceptance_decided` event,
+produced by the host's *acceptance gate*, can change a result to `accepted`.
 
 ## State
 
-Once storage exists (work packages AP-04 and AP-05), the event log (*journal*) will be the
-source of truth, and the run's state will be derived from it. State is plain data that can be
-written as JSON, so replaying events and comparing states give exact results. Two version
-numbers are kept separate: a *graph revision* is the history of a plan's content, and
-`schemaVersion` is the version of the data format. [Architecture: State]
+Once storage exists, the event log (*journal*) will be the source of truth, and the run's
+state will be derived from it. State is plain data that can be written as JSON, so replaying
+events and comparing states give exact results. Two version numbers are kept separate: a
+*graph revision* is the history of a plan's content, and `schemaVersion` is the version of
+the data format.
 
 ## Where new code goes
 
@@ -134,30 +119,25 @@ numbers are kept separate: a *graph revision* is the history of a plan's content
   `pi` implements it.
 - **Use of the Pi SDK** goes into `pi`. The extension moves into its own package once it gains
   a supervisor client with different dependencies.
-- **Wiring the parts together** goes into `cli`. [Architecture: Where new code goes]
+- **Wiring the parts together** goes into `cli`.
 
 ## Repository tooling
 
-`npm run check` runs the build, the type check of the tests, the unit tests, Biome
-(formatting, lint and the package rules above), the ledger validator and the Markdown link
-checker. The `scripts/` folder holds these checks, the *exact-source fingerprint* used to tie
-ledger evidence to a precise version of the code, and the Claude Code Stop hook. On GitHub, the
-`checks` workflow runs `npm ci --ignore-scripts`, `npm run check` and `npm run demo` on the
-Node.js version in `.node-version`. The `pages` workflow regenerates `site/trace.json` from the
-same commit and publishes `site/` to GitHub Pages, so the viewer always shows the current
-reducer's behaviour. [Architecture: Repository tooling]
+`npm run check` builds every package and runs Biome formatting, lint, and the package rules
+above. On GitHub, the `checks` workflow runs `npm ci --ignore-scripts`, `npm run check` and
+`npm run demo` on the Node.js version in `.node-version`. The `pages` workflow regenerates
+`site/trace.json` from the same commit and publishes `site/` to GitHub Pages, so the viewer
+always shows the current reducer's behaviour.
 
 ## Limitations
 
 - Everything on this page describes decisions, not execution: there is no storage, no worker
-  process, no supervisor and no model call yet. [Architecture: What runs today]
+  process, no supervisor and no model call yet.
 - The reducer handles one flat plan. Nested plans, budgets and suspension are planned
-  extensions of the same reducer, not existing features. [Architecture: What runs today, Where
-  new code goes]
+  extensions of the same reducer, not existing features.
 - Verification findings do not yet reach the producing task, and invalidation does not
-  cascade ([decision 0005](decisions/0005-producer-targeted-repair.md), not implemented).
-- "The journal is the source of truth" becomes true only once storage exists (AP-04, AP-05).
-  [Architecture: State]
+  cascade.
+- "The journal is the source of truth" becomes true only once storage exists.
 
 ## Glossary
 
@@ -167,7 +147,6 @@ reducer's behaviour. [Architecture: Repository tooling]
 | Command | An instruction the reducer hands to the host, such as "start this attempt". The reducer never carries it out. |
 | Deterministic | Always produces the same output for the same input; no model, no randomness. |
 | Effect | Anything that acts on the outside world: writing files, starting processes, calling a model. |
-| Exact-source fingerprint | A hash identifying the exact contents of the working tree, used to tie evidence to a precise code version. |
 | Fencing token | A number that increases with each new attempt; messages carrying an old number are rejected. |
 | Graph revision | A numbered version of a plan's content. Revisions are never edited, only superseded. |
 | Host | The non-AI program that drives the reducer, stores events and carries out commands. |

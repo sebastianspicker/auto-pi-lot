@@ -15,9 +15,70 @@ site/trace.json
 !.env.example
 *.log
 
-# Personal and agent-local files
+# Tool and agent state
 .agents/
 .claude/
+.codacy/
+.codegraph/
+.codex/
+.cursor/
+.repowise/
+.serena/
+.impeccable/
+.continue/
+.windsurf/
+.aider*
+.mcp.json
+.history/
+.cache/
+
+# Agent instruction files
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+.cursorrules
+.github/copilot-instructions.md
+*.prompt.md
+
+# Nested worktrees and checkouts
+.worktrees/
+worktrees/
+.claude/worktrees/
+.codex/worktrees/
+
+# Tests, fixtures, snapshots and test configuration
+test/
+tests/
+**/test/
+**/tests/
+__tests__/
+**/__tests__/
+fixtures/
+**/fixtures/
+snapshots/
+**/snapshots/
+*.snap
+pytest.ini
+conftest.py
+jest.config.*
+tsconfig.test.json
+
+# Local development helper scripts
+scripts/
+
+# Work-in-progress and internal documents
+DESIGN_BRIEF.md
+TODO*
+docs/acceptance-matrix.md
+docs/archive/
+docs/decisions/
+docs/design.md
+docs/implementation-*
+docs/reviews/
+docs/rewrite_report.md
+docs/roadmap.md
+
+# OS and editor files
 .DS_Store
 .idea/
 .vscode/

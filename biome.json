@@ -7,15 +7,7 @@
   },
   "files": {
     "ignoreUnknown": false,
-    "includes": [
-      "**",
-      "!**/dist",
-      "!**/node_modules",
-      "!**/coverage",
-      "!**/*.tsbuildinfo",
-      "!docs/implementation-ledger.json",
-      "!docs/reviews"
-    ]
+    "includes": ["**", "!**/dist", "!**/node_modules", "!**/coverage", "!**/*.tsbuildinfo"]
   },
   "formatter": {
     "enabled": true,
@@ -61,16 +53,6 @@
     }
   },
   "overrides": [
-    {
-      "includes": ["**/test/**"],
-      "linter": {
-        "rules": {
-          "style": {
-            "noNonNullAssertion": "off"
-          }
-        }
-      }
-    },
     {
       "includes": ["packages/*/src/**"],
       "linter": {

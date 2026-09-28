@@ -17,6 +17,5 @@ call models on its own. Reports are most useful for:
 - the repository's CI and GitHub Pages workflows;
 - dependencies pinned in `package-lock.json`.
 
-The [design document](docs/design.md) describes the planned trust boundaries. Note that a
-Git worktree is not a sandbox: once worker execution exists, it runs with the permissions of
-the local user.
+A Git worktree is not a sandbox: once worker execution exists, it runs with the permissions
+of the local user.
