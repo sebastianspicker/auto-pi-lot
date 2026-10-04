@@ -1,6 +1,6 @@
 # @auto-pi-lot/pi
 
-Everything that touches the Pi SDK, pinned to `@earendil-works/pi-coding-agent@0.87.0`.
+Everything that touches the Pi SDK, pinned to `@earendil-works/pi-coding-agent@1.0.2`.
 No other workspace may import the SDK, and this package may import only the provider-neutral
 session port from core (`@auto-pi-lot/core/session`), never the run reducer. Biome enforces both.
 
