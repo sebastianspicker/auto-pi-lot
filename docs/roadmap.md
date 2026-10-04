@@ -20,8 +20,6 @@ edition was rewritten from; the originals are in the Git history at commit `bf04
 
 This page only gives an overview. The authoritative sources are:
 
-- the [implementation ledger](implementation-ledger.json), a machine-checked file that holds,
-  for every work package, its ID, dependencies, deliverables, status and evidence;
 - the [design document](design.md), which specifies the finished product;
 - the [acceptance scenarios](acceptance-matrix.md), 41 numbered situations (AT-01 to AT-41)
   the finished system must be shown to handle. [Roadmap: intro]
@@ -47,10 +45,10 @@ before the reorganisation. [Roadmap: header, last paragraph]
 | M5: Context and operations | AP-22, AP-23 | Shrinking what a model is shown without losing what it must see, searchable run inspection, retention and restore, and exporting the evidence for a run. |
 | M6: Qualification | AP-25, then AP-24 | First, evidence that the package installs and runs on each supported platform; then a full evaluation of the recursive product on real tasks under a plan fixed in advance. |
 
-[Roadmap: milestone table; ledger task titles]
+[Roadmap: milestone table]
 
-The milestone numbers describe the overall shape, not a strict order: the ledger holds the
-real dependencies between work packages, and a package does not wait for the previous
+The milestone numbers describe the overall shape, not a strict order: the real dependencies
+between work packages are fixed by the design, and a package does not wait for the previous
 milestone unless it depends on something in it. [Roadmap: "Start with AP-01"]
 
 ## What comes next
@@ -80,24 +78,24 @@ with AP-01"]
 - Calling the product **effective** additionally needs AP-16 and AP-24, the two measurements
   on real tasks.
 - Neither documentation nor tests from the predecessor project count as evidence for these
-  gates. The ledger records the current status of each package; no acceptance scenario is
+  gates. Each package has a current status; no acceptance scenario is
   fully verified. [Roadmap: release paragraph]
 
 ## History
 
 A [foundation-hardening proposal](archive/2026-09-24-foundation-hardening.md) suggested
 building the pure decision logic before storage (AP-26) and adding automatic repository
-checks (AP-27); the ledger has included both since plan revision 2. Plan revision 3 then
+checks (AP-27); both have been included since plan revision 2. Plan revision 3 then
 reorganised the seven original scaffold packages into three, `core`, `pi` and `cli`, per
 [decision 0004](decisions/0004-three-packages.md); see [architecture](architecture.md).
 [Roadmap: last paragraph]
 
 ## Limitations of this overview
 
-- Status here is a snapshot of plan revision 3 (2026-09-24). The ledger is authoritative if
+- Status here is a snapshot of plan revision 3 (2026-09-24). The design document is authoritative if
   the two disagree.
 - The design document (§13) describes AP-01 to AP-25 as unimplemented work, while this page
-  lists AP-01 as in progress. Both are true in the ledger's terms: work has started but
+  lists AP-01 as in progress. Both are true: work has started but
   nothing in AP-01 is complete. [Design §13; Roadmap: header]
 - The descriptions of later milestones are plans, not commitments to dates; the sources give
   no dates.
@@ -112,7 +110,6 @@ reorganised the seven original scaffold packages into three, `core`, `pi` and `c
 | Fake worker | A stand-in for a model-driven worker that returns scripted results, so the system can be tested without model calls. |
 | Final-payload admission | Checking the exact request that will be sent to a model provider, including its size and cost limits, before sending it. |
 | Flat | A plan in which no task starts a sub-plan. |
-| Ledger | `implementation-ledger.json`: the authoritative, machine-checked record of work packages, scenarios, status and evidence. |
 | Live | Involving real calls to a paid model provider. |
 | SQLite | A small database stored in a single local file. |
 | Work package (AP-xx) | One numbered unit of planned work with its own deliverables and evidence. |

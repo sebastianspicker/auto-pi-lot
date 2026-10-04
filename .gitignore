@@ -18,6 +18,17 @@ site/trace.json
 # Personal and agent-local files
 .agents/
 .claude/
+/AGENTS.md
+/DESIGN_BRIEF.md
+/docs/implementation-ledger.json
+/docs/archive/scaffold-handoff.md
+/packages/cli/test/
+/packages/core/test/
+/packages/pi/test/
+/scripts/test/
+/scripts/check-ledger.ts
+/scripts/stop-hook.sh
+/tsconfig.test.json
 .DS_Store
 .idea/
 .vscode/

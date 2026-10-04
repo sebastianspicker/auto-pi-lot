@@ -15,9 +15,7 @@ uncommitted.
 | `docs/roadmap.md` | [roadmap.md](roadmap.md) | 449 → 1,257 |
 | `docs/acceptance-matrix.md` | [acceptance-matrix.md](acceptance-matrix.md) | 2,345 → 3,655 |
 
-Context only, not rewritten: `docs/implementation-ledger.json` (task titles, statuses, status
-vocabulary), `docs/decisions/0001-engine-pure-reducer.md`, `AGENTS.md`. Every source file was
-read in full; none was unreadable. No format conversion was needed (all Markdown).
+Context only, not rewritten: task titles, statuses and status vocabulary from the former implementation ledger, `docs/decisions/0001-engine-pure-reducer.md`. Every source file was read in full; none was unreadable. No format conversion was needed (all Markdown).
 
 ## 1. Source analysis
 
@@ -62,7 +60,7 @@ qualified by enforced dimensions; mock providers cannot prove live behaviour.
 
 **Audience signals.** GitHub-facing README with badges and a screenshot tour; "for a GitHub
 audience" in the commit that introduced these docs; CONTRIBUTING.md for human contributors;
-AGENTS.md sends coding agents to the same files; vocabulary assumes distributed-systems
+The same files serve coding agents; vocabulary assumes distributed-systems
 knowledge; no funder or non-technical stakeholder is named.
 
 ## 2. Resolved brief
@@ -172,7 +170,7 @@ rows present; design §1–§14 headings present).
   not zero" (Design §7). Commands, Node version and image paths match the source.
 - **Architecture.** Rejection reasons, event names, file paths and all 5 enforcement rules
   checked against the source. The glossary definition of graph revision ("never edited, only
-  superseded") comes from design §11 and AGENTS.md, not architecture.
+  superseded") comes from design §11, not architecture.
 - **Design.** Numbers checked: depth 2; 4, 24, 2, 2 defaults (kept as "suggested"); 19
   migrations; the budget invariant and state machine verbatim. All 15 contracts and all 6 roles
   are present. The "at a glance" bullets are summaries, each citing its section. Two conflicts
@@ -191,7 +189,7 @@ rows present; design §1–§14 headings present).
 - *Audience is evaluators, not implementers (high).* If contributors are the main readers, the
   added explanations are overhead but nothing they need was removed: identifiers, paths, rule
   names and contract names are all still there.
-- *Replacing the originals is safe for coding agents (medium).* AGENTS.md tells agents to read
+- *Replacing the originals is safe for coding agents (medium).* The former agent guidance told agents to read
   `docs/architecture.md` and "the design section you touch". Those sections still exist with
   the same numbers and identifiers, but the prose is longer. If agents or the maintainer prefer
   the terse originals, restore them with `git checkout bf04bd0 -- README.md docs/`.

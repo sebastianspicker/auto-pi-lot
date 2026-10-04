@@ -15,7 +15,7 @@ the source. Bracketed references such as [Architecture: State] point to the sect
 original document this edition was rewritten from; the originals are in the Git history at
 commit `bf04bd0`. Terms in *italics* on first use are defined in the [glossary](#glossary).
 For the finished product see the [design document](design.md); for progress see the
-[roadmap](roadmap.md) and the [ledger](implementation-ledger.json).
+[roadmap](roadmap.md).
 
 ## What runs today
 
@@ -138,10 +138,9 @@ numbers are kept separate: a *graph revision* is the history of a plan's content
 
 ## Repository tooling
 
-`npm run check` runs the build, the type check of the tests, the unit tests, Biome
-(formatting, lint and the package rules above), the ledger validator and the Markdown link
-checker. The `scripts/` folder holds these checks, the *exact-source fingerprint* used to tie
-ledger evidence to a precise version of the code, and the Claude Code Stop hook. On GitHub, the
+`npm run check` runs the build, Biome (formatting, lint and the package rules above) and the
+Markdown link checker. The `scripts/` folder holds the link checker and the *exact-source
+fingerprint* used to tie evidence to a precise version of the code. On GitHub, the
 `checks` workflow runs `npm ci --ignore-scripts`, `npm run check` and `npm run demo` on the
 Node.js version in `.node-version`. The `pages` workflow regenerates `site/trace.json` from the
 same commit and publishes `site/` to GitHub Pages, so the viewer always shows the current

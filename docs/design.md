@@ -19,7 +19,7 @@ in *italics* on first use are defined in the [glossary](#glossary).
 
 This page states the rules, data formats and behaviour the finished system must have. For the
 code that exists today, see [architecture](architecture.md); for progress, see the
-[roadmap](roadmap.md) and the [implementation ledger](implementation-ledger.json).
+[roadmap](roadmap.md).
 
 ## The design at a glance
 
@@ -77,9 +77,8 @@ Background]
 ## Conventions
 
 A change to the behaviour described here needs a short decision record (ADR) in
-[docs/decisions/](decisions/) and matching tests of the data format or failure. The
-[implementation ledger](implementation-ledger.json) tracks status per work package; an entry
-is updated only with evidence tied to the exact source version that implements it. [Design:
+[docs/decisions/](decisions/) and matching tests of the data format or failure. Status is
+tracked per work package; an entry is updated only with evidence tied to the exact source version that implements it. [Design:
 Conventions]
 
 ## 1. Scope
@@ -551,8 +550,7 @@ deferred. [§12]
 
 ## 13. Order of work
 
-The [implementation ledger](implementation-ledger.json) is the canonical map of which work
-depends on which. AP-00 records only the verified scaffold; AP-01 to AP-25 describe
+The work packages form a dependency graph that fixes which work depends on which. AP-00 records only the verified scaffold; AP-01 to AP-25 describe
 unimplemented work, and no future capability is marked done. [§13] *(The roadmap lists AP-01,
 AP-26 and AP-27 as in progress; "in progress" means started, not implemented. See the
 [roadmap](roadmap.md).)*
@@ -569,7 +567,7 @@ authorises no live run. [§13]
 
 ## 14. When is it done?
 
-Each work package in the ledger carries an implementation status and evidence records; the
+Each work package carries an implementation status and evidence records; the
 live evaluation is tracked separately. [§14]
 
 - A **local, implementation-ready release** means AP-01 to AP-15 and AP-17 to AP-23 are
@@ -646,5 +644,5 @@ for focused, fault and live tests are added and documented by the work packages 
 | Task graph | A plan: tasks and their dependencies. |
 | Verifying node | A task that reads another task's result before it is accepted, in order to check it. The producer's acceptance waits for it. |
 | WAL mode | Write-ahead logging, an SQLite mode that lets reads continue while writing. |
-| Work package (AP-xx) | One numbered unit of planned work in the ledger. |
+| Work package (AP-xx) | One numbered unit of planned work. |
 | Worktree | A separate Git working copy, used so parallel writers do not collide. It is not a security sandbox. |

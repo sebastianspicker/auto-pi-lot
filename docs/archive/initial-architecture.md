@@ -1,10 +1,10 @@
 # Architecture
 
-> **Archived 2026-09-24.** Historical baseline only; superseded by the [design document](../design.md) and [ledger](../implementation-ledger.json). Do not update.
+> **Archived 2026-09-24.** Historical baseline only; superseded by the [design document](../design.md) and the [roadmap](../roadmap.md). Do not update.
 
 Initial design overview. The [design document](../design.md)
 refines runtime semantics and boundaries after the predecessor review; follow its
-[ledger](../implementation-ledger.json) for implementation order and status.
+[roadmap](../roadmap.md) for implementation order and status.
 
 ## Scope
 

@@ -6,9 +6,7 @@ Status: proposed target scenarios, 2026-09-22.
 must be shown to handle correctly: mostly failures such as crashes, stale workers, budget
 exhaustion and conflicting changes. For each one it says what triggers it, what must be
 observed, and what kind of evidence counts. It is a plan for verification, not a test
-report: **none of the 41 scenarios is verified yet**, and the
-[implementation ledger](implementation-ledger.json) is where their status is tracked.
-[Matrix: intro]
+report: **none of the 41 scenarios is verified yet**. [Matrix: intro]
 
 *About this page.* It is a plain-language edition of the acceptance matrix for engineers and
 engineering leads who want to judge what "done" will mean for this project. Scenario IDs are
@@ -20,12 +18,12 @@ at commit `bf04bd0`. Terms in *italics* on first use are defined in the
 
 ## What this page is, and is not
 
-- It turns earlier planning documents, the [scaffold handoff](archive/scaffold-handoff.md),
-  the [initial architecture](archive/initial-architecture.md) and the
+- It turns earlier planning documents, the
+  [initial architecture](archive/initial-architecture.md) and the
   [review of the predecessor project pi-graph](reviews/pi-graph-2026-09-22.md), into
   conditions that can be observed from outside. [Matrix: intro]
-- The design document defines what the behaviour should be. The ledger records, for each
-  scenario, its implementation link and the evidence from actual runs. Scenario IDs never
+- The design document defines what the behaviour should be. Evidence from actual runs is
+  recorded per scenario. Scenario IDs never
   change, even if milestones are reordered. [Matrix: intro]
 - There are deliberately no checkboxes here: ticking one would mix up a proposed check with an
   observed result. [Matrix: intro]
@@ -166,7 +164,7 @@ evidence required.
 
 ## How status is recorded
 
-For each scenario, the ledger should distinguish **unimplemented**, **implemented but
+For each scenario, the status should distinguish **unimplemented**, **implemented but
 unverified**, **verified with receipt**, **failed**, **blocked** and **deferred**. A scenario
 can have several receipts, for different platforms or fault points. A skipped test is
 recorded with its reason and never counted as a pass. [Matrix: closing paragraph]
@@ -178,8 +176,7 @@ model provider. This page neither authorises model calls nor sets a success thre
 ## Limitations
 
 - These are proposed checks, dated 2026-09-22. None has been run as a verification of the
-  finished system; the ledger currently records all 41 as unimplemented. [Matrix: intro;
-  ledger]
+  finished system; all 41 are currently unimplemented. [Matrix: intro]
 - Live effectiveness (AT-40) has no pass mark defined here; whether graph mode beats a single
   Pi session is an open question until that evaluation is designed and run. [Matrix: AT-40]
 - Several scenarios depend on design decisions not yet made, such as the storage backend

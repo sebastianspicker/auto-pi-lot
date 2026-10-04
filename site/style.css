@@ -1,6 +1,6 @@
 /*
  * Trace viewer. The page is a reviewed log: a state matrix over the full event list.
- * System fonts, one accent colour (rejection), state carried by glyph shape. See DESIGN_BRIEF.md.
+ * System fonts, one accent colour (rejection), state carried by glyph shape.
  */
 
 /* ---------- Tokens ---------- */

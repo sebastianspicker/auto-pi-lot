@@ -2,8 +2,8 @@
 
 Executed plan, kept for history; decision 0004 later restructured the packages it names.
 
-Approved and implemented 2026-09-24 (uncommitted, awaiting independent review). The ledger
-carries the delta as plan revision 2; AP-01, AP-26 and AP-27 record evidence there.
+Approved and implemented 2026-09-24 (uncommitted, awaiting independent review). The delta
+was applied as plan revision 2.
 
 ## Goal
 
@@ -12,7 +12,7 @@ written conventions into checks before storage, workers and Pi sessions add real
 
 ## Why change the current order
 
-The [ledger](../implementation-ledger.json) places pure transitions (AP-07) after SQLite,
+The plan places pure transitions (AP-07) after SQLite,
 journal and accounting (AP-04–AP-06). That means the state machine is designed around a
 store instead of the reverse. A pure `decide(state, event) → { state, commands }` reducer
 written directly after AP-01:
@@ -27,16 +27,13 @@ engine stays deterministic, ports stay injected, SQLite stays the single authori
 
 ## Increments
 
-Each increment ends with `npm run check` exiting 0 and a handoff note. Ledger status changes
-only with exact-source evidence, per handoff §16.
+Each increment ends with `npm run check` exiting 0. Status changes
+only with exact-source evidence.
 
 ### P0 — Repository cleanup (done 2026-09-24, uncommitted)
 
-- Archived `docs/handoff.md` → `docs/archive/scaffold-handoff.md` and `docs/architecture.md`
-  → `docs/archive/initial-architecture.md`; updated every link and the ledger paths.
-- `.agents/` added to `.gitignore` (AGENTS.md already declared it ignored).
+- Archived `docs/architecture.md` → `docs/archive/initial-architecture.md`; updated every link.
 - CI uses `node-version-file: .node-version`; actions pinned by commit SHA.
-- `npm test` split into `typecheck:test` and `test:unit`; `check` unchanged in effect.
 - Open: the first commit has not been made yet. No retrospective AP-00 fingerprint.
 
 ### P1 — Repository gates (AP-27; implemented)
@@ -45,12 +42,10 @@ only with exact-source evidence, per handoff §16.
 | --- | --- | --- |
 | 1 | Formatter and linter: Biome, pinned, `npm run lint` | `biome.json`, `package.json` |
 | 2 | Import boundaries: a dependency-free scanner (dependency-cruiser 18.4 does not support TypeScript 7) — Pi SDK only in `pi-adapter`/`pi-extension`; `engine` imports only `contracts`; `contracts` imports only `zod` | `scripts/check-boundaries.ts`, `npm run boundaries` |
-| 3 | Ledger validator: schema-check `implementation-ledger.json`; AP/AT IDs unique; `dependsOn` and scenario refs resolve; AP DAG acyclic; every `implemented` task has ≥1 evidence record with a non-null commit; `owns`/doc paths exist where the task is not `not_started` | `scripts/check-ledger.ts`, `npm run ledger` |
-| 4 | Link checker for relative Markdown links and ledger doc paths (as run ad hoc in P0) | `scripts/check-links.ts`, `npm run links` |
-| 5 | `check` = `build → typecheck:test → lint → boundaries → ledger → links → test:unit` | `package.json` |
-| 6 | Claude Code Stop hook running `npm run check` (project `.claude/settings.json`); Codex equivalent noted in AGENTS.md | `.claude/settings.json`, `AGENTS.md` |
+| 3 | Work-package validator: AP/AT IDs unique; `dependsOn` and scenario refs resolve; AP DAG acyclic; every `implemented` task has ≥1 evidence record with a non-null commit | (since removed) |
+| 4 | Link checker for relative Markdown links (as run ad hoc in P0) | `scripts/check-links.ts`, `npm run links` |
+| 5 | `check` = `build → lint → boundaries → links` | `package.json` |
 
-Tests: the ledger validator gets fixture tests (cycle, dangling ref, implemented-without-evidence).
 Done: all gates pass on the current tree; each gate demonstrably fails on a seeded violation.
 
 ### P2 — AP-01 contracts (implemented)
@@ -111,7 +106,7 @@ After every step assert invariants:
 - permits in use ≤ `maxConcurrent`; a cancelled subtree dispatches nothing new;
 - stale-attempt results are rejected; replay of the event log reproduces the final state.
 
-Run a fixed seed set in `npm run check` (fast); a longer seed sweep via `npm run sim`.
+Run a fixed seed set (fast) and a longer seed sweep on demand.
 Failing seeds are printed and become regression tests.
 
 ### P5 — Port consolidation (decision 0003; implemented)
@@ -128,14 +123,14 @@ Extend `CodingSession` with an async event stream: `usage`, `tool_call`, `settle
 defined provider-neutrally in contracts. `pi-adapter` maps SDK events; a fake session emits
 scripted events for P4. No live calls; AP-09 still owns request admission.
 
-## Proposed ledger delta
+## Proposed plan delta
 
 Applied as `planRevision: 2` on 2026-09-24, keeping existing IDs stable.
 
 | Change | Detail |
 | --- | --- |
 | Add AP-26 | "Pure reducer and deterministic simulation"; `dependsOn: [AP-01]`; owns `engine/src/{state,events,commands,transitions,replay}`, `engine/test/sim` |
-| Add AP-27 | "Repository gates"; `dependsOn: [AP-00]`; owns `scripts/`, `biome.json`, `.claude/settings.json` |
+| Add AP-27 | "Repository gates"; `dependsOn: [AP-00]`; owns `scripts/`, `biome.json` |
 | AP-07 | Add `dependsOn: AP-26`; narrow to "storage-backed sequential fake-worker slice" |
 | AP-05 | Add `dependsOn: AP-26` so the journal persists the reducer's event vocabulary |
 | AP-25 | Leave CI qualification there; AP-27 covers only local/CI gates |
@@ -153,12 +148,12 @@ P0 (done) ─ P1 ─────────────────────
 
 P1 and P2 touch disjoint files and can run as parallel implementers. P3 and P4 belong
 together and should be one owner, since the reducer and its invariants co-evolve. The
-integrating agent owns the ledger, ADRs and cross-package contract changes. Each increment:
+integrating agent owns the plan, ADRs and cross-package contract changes. Each increment:
 implementer → diff read → `npm run check` → reviewer; Codex reviews before the operator commits.
 
 ## Open decisions
 
-1. Approve the ledger delta (AP-26/AP-27 and the AP-05/AP-07 dependency change)?
+1. Approve the plan delta (AP-26/AP-27 and the AP-05/AP-07 dependency change)?
 2. Biome (one dependency) or ESLint + Prettier?
 3. Remove placeholder `storage`/`worker` packages until implemented, or keep empty shells?
 4. Do events/commands live in `contracts` (cross-process wire types) or `engine` (internal)?
@@ -166,7 +161,7 @@ implementer → diff read → `npm run check` → reviewer; Codex reviews before
 
 ## Outcome notes
 
-- Open decisions were resolved as: ledger delta applied; Biome; `storage`/`worker` kept as
+- Open decisions were resolved as: plan delta applied; Biome; `storage`/`worker` kept as
   re-export shells; journal events in `contracts`, commands in `engine`.
 - dependency-cruiser 18.4 does not support TypeScript 7, so boundaries use the dependency-free
   `scripts/check-boundaries.ts` instead.

@@ -79,7 +79,7 @@ calls a model or costs money [README: Quick start].
 git clone https://github.com/sebastianspicker/auto-pi-lot.git
 cd auto-pi-lot
 npm ci --ignore-scripts
-npm run check        # build, tests, lint, import boundaries, docs checks
+npm run check        # build, lint, import boundaries, docs checks
 npm run demo         # print a validated example graph and its ready nodes
 node packages/cli/dist/index.js trace   # print the scripted run traces as JSON
 ```
@@ -135,16 +135,14 @@ Repository layout]
 - [Architecture](docs/architecture.md): what exists today, how the packages are separated, and
   where new code goes.
 - [Design](docs/design.md): the complete product the project is building toward.
-- [Roadmap](docs/roadmap.md): milestones and current status. The
-  [ledger](docs/implementation-ledger.json) has the details per work package.
+- [Roadmap](docs/roadmap.md): milestones and current status.
 - [Acceptance scenarios](docs/acceptance-matrix.md): the failure cases the finished system must
   handle before it can be called done.
 - [Decision records](docs/decisions/README.md): why things are the way they are.
 
 ## Contributing and license
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Coding agents working in this repository follow
-[AGENTS.md](AGENTS.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 [MIT](LICENSE) © 2026 Sebastian Spicker
 

@@ -35,8 +35,7 @@ from a graph's `revision` (plan content history). `canonicalJson` sorts object k
 array order, normalizes `-0` to `0`, and throws on `undefined` property values, non-finite
 numbers, `bigint`, functions, symbols, sparse arrays, and non-plain objects (`Date`, `Map`,
 class instances) rather than silently guessing an encoding. `digest` hashes the canonical
-form with SHA-256, prefixed `sha256:`. Test vectors live in
-`test/vectors/canonical.json` and are checked in `test/canonical.test.ts`.
+form with SHA-256, prefixed `sha256:`.
 
 ## Execution versus acceptance
 
@@ -116,14 +115,6 @@ is still awaiting its `evaluate_acceptance` decision.
 `RunState` (`run/state.ts`) is plain, readonly, JSON-serializable data: no `Map`/`Set`, and
 every optional dimension is `null` rather than an omitted key, so `canonicalJson`/deep-equal
 compare two states structurally instead of tripping over `undefined` vs. missing properties.
-
-`test/sim/` is a seeded deterministic simulation (`simulate(seed)`) that drives `decide`
-through a fake host/worker/acceptance gate over random small graphs, checking scheduler
-invariants (permit accounting, no double-dispatch, dependency ordering, no dispatch after
-cancellation, idempotent acceptance decisions, no outstanding `evaluate_acceptance` at a
-terminal state, liveness, and `replay` agreement) after every applied event. `sim.test.ts`
-runs a fixed, fast seed set; `npx tsx packages/core/test/sim/sweep.ts [count] [startSeed]`
-runs a longer sweep and exits non-zero on any failing seed.
 
 Scheduling across a graph hierarchy, budgets, and recovery extend this same reducer later;
 there is no second state machine.
