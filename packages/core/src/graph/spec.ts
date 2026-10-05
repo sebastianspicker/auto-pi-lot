@@ -4,7 +4,15 @@ import { IdSchema, SchemaVersionSchema } from "../wire.js";
 
 const positiveInteger = z.number().int().positive();
 
-export const RoleSchema = z.enum(["planner", "explorer", "implementer", "verifier", "reviewer", "integrator"]);
+export const RoleSchema = z.enum([
+  "planner",
+  "explorer",
+  "implementer",
+  "verifier",
+  "falsifier",
+  "reviewer",
+  "integrator",
+]);
 export type Role = z.infer<typeof RoleSchema>;
 
 export const NodeLimitsSchema = z.strictObject({

@@ -30,13 +30,19 @@ For the finished product see the [design document](design.md); for progress see 
   starting an attempt, under a limit on how many run at once; a bounded number of retries;
   the two kinds of dependency ("needs a result" and "needs an accepted result");
   *fencing tokens*; the host's acceptance decisions; and cancellation. `replay(events)` runs
-  a saved sequence of events through `decide` to rebuild the state. [Architecture: What runs
+  a saved sequence of events through `decide` to rebuild the state. When a task runs out of
+  attempts, the tasks waiting on it are marked failed rather than left waiting
+  (decision 0006). An
+  "accepted" decision must cite at least one receipt, or the reducer rejects it. [Architecture: What runs
   today]
 
-  A rejected result today is retried on the task that was rejected, and tasks that already
-  used it keep their state. [Decision 0005](decisions/0005-producer-targeted-repair.md) changes
-  this: a failing finding will reject and repair the task that produced the result, and redo
-  everything built on it. That change is not implemented yet.
+  A task whose result other tasks check is accepted only after every checking task has an
+  accepted result for that exact attempt. A failing finding rejects the task that produced the
+  result: its next attempt names the rejection it repairs, and everything built on the
+  rejected result is stopped or set back to waiting
+  (decision 0005,
+  decision 0007). How receipts turn into
+  that finding is still the host's job.
 - **Session interface and Pi adapter.** `CodingSession` is the interface through which the
   rest of the system talks to an AI coding session. It knows nothing about any particular
   model provider. `openPiSession` implements it on top of the pinned version of the Pi
@@ -44,7 +50,7 @@ For the finished product see the [design document](design.md); for progress see 
   [Architecture: What runs today]
 - **Pi extension.** The `/graph` command reports the development status. It starts nothing.
 - **Command-line tool.** `demo` prints a checked example plan, the order its tasks could run
-  in, and which tasks are ready to start. `trace` runs three scripted scenarios through the
+  in, and which tasks are ready to start. `trace` runs four scripted scenarios through the
   real reducer and prints every step as JSON; the
   [trace viewer](https://sebastianspicker.github.io/auto-pi-lot/) (`site/`) replays that
   output. [Architecture: What runs today]
@@ -106,7 +112,7 @@ to work in this order [Architecture: The reducer protocol]:
    `acceptance_decided`.
 
 Recovery after a crash means replaying the saved event log, then reconciling any actions that
-were in progress ([decision 0001](decisions/0001-engine-pure-reducer.md)). A worker's result
+were in progress (decision 0001). A worker's result
 is only a proposal: only an `acceptance_decided` event, produced by the host's *acceptance
 gate*, can change a result to `accepted`. [Architecture: The reducer protocol]
 
@@ -153,8 +159,9 @@ reducer's behaviour. [Architecture: Repository tooling]
 - The reducer handles one flat plan. Nested plans, budgets and suspension are planned
   extensions of the same reducer, not existing features. [Architecture: What runs today, Where
   new code goes]
-- Verification findings do not yet reach the producing task, and invalidation does not
-  cascade ([decision 0005](decisions/0005-producer-targeted-repair.md), not implemented).
+- The reducer acts on acceptance decisions, but nothing turns check or review receipts into
+  them yet: review agreement and counterexamples as required checks are host policy that does
+  not exist (decision 0007).
 - "The journal is the source of truth" becomes true only once storage exists (AP-04, AP-05).
   [Architecture: State]
 

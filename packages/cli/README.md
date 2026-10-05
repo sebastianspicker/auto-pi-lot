@@ -4,8 +4,8 @@ Local composition entry point. No model calls or task execution.
 
 - `node packages/cli/dist/index.js demo` (also `npm run demo`) prints a validated graph and its
   initial ready nodes without running anything.
-- `node packages/cli/dist/index.js trace` prints a JSON trace of three scripted host scenarios
-  (`happy-path`, `retry-and-fencing`, `cancellation`) run through the real run reducer
+- `node packages/cli/dist/index.js trace` prints a JSON trace (`formatVersion: 2`) of four scripted host scenarios
+  (`happy-path`, `retry-and-fencing`, `cancellation`, `repair`) run through the real run reducer
   (`decide`) from `@auto-pi-lot/core`: every journal event sent in, whether the reducer applied
   or rejected it, the commands it emitted, and the resulting run/node state after each step.
   Output is deterministic (fixed timestamps and event ids) so it can be diffed or committed as a

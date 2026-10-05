@@ -27,7 +27,7 @@ This page only gives an overview. The authoritative sources are:
 ## Recent change: three packages instead of seven
 
 In plan revision 3 the code was reorganised into three packages, as recorded in
-[decision 0004](decisions/0004-three-packages.md): the former `contracts` and `engine`
+decision 0004: the former `contracts` and `engine`
 packages were merged into `core`, and the former `pi-adapter` and `pi-extension` packages
 were merged into `pi`. The [architecture page](architecture.md) describes the result. This is
 why the evidence for AP-01, AP-26 and AP-27 needs a fresh review: it describes the code
@@ -87,7 +87,7 @@ A [foundation-hardening proposal](archive/2026-09-24-foundation-hardening.md) su
 building the pure decision logic before storage (AP-26) and adding automatic repository
 checks (AP-27); both have been included since plan revision 2. Plan revision 3 then
 reorganised the seven original scaffold packages into three, `core`, `pi` and `cli`, per
-[decision 0004](decisions/0004-three-packages.md); see [architecture](architecture.md).
+decision 0004; see [architecture](architecture.md).
 [Roadmap: last paragraph]
 
 ## Limitations of this overview

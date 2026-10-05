@@ -24,6 +24,7 @@ interface NodeSnapshot {
   readonly execution: ExecutionState;
   readonly disposition: ResultDisposition | null;
   readonly attemptCount: number;
+  readonly invalidatedAttemptCount: number;
   readonly failureCategory: FailureCategory | null;
   readonly activeAttemptId: string | null;
 }
@@ -52,7 +53,7 @@ interface ScenarioTrace {
 
 export interface TraceOutput {
   readonly generator: "auto-pi-lot trace";
-  readonly formatVersion: 1;
+  readonly formatVersion: 2;
   readonly scenarios: readonly ScenarioTrace[];
 }
 
@@ -155,6 +156,7 @@ function snapshotNodes(state: RunState): Record<string, NodeSnapshot> {
       execution: node.execution,
       disposition: node.disposition,
       attemptCount: node.attemptCount,
+      invalidatedAttemptCount: node.invalidatedAttemptCount,
       failureCategory: node.failureCategory,
       activeAttemptId: node.activeAttemptId,
     };
@@ -229,7 +231,7 @@ function runScenario(params: {
 
 // ---------------------------------------------------------------------------------------
 // Scenario 1: happy-path. implement -> verify (result_ready) -> review (accepted), all the
-// way to a succeeded run, using the same graph the `demo` command prints.
+// way to a succeeded run, with implement's acceptance deferred until verify is accepted, using the same graph the `demo` command prints.
 // ---------------------------------------------------------------------------------------
 
 function happyPathScenario(): ScenarioTrace {
@@ -251,7 +253,7 @@ function happyPathScenario(): ScenarioTrace {
       },
     },
     {
-      note: "implement proposes a result. verify can start now: it only needs a result from implement, not an accepted one.",
+      note: "implement proposes a result. It is now verifying: the host can't accept it until verify has an accepted result for this attempt, so the reducer asks for no decision yet. verify can start, bound to this attempt of implement.",
       expect: "applied",
       build: (ctx) => {
         const d = ctx.dispatchFor("implement");
@@ -259,7 +261,7 @@ function happyPathScenario(): ScenarioTrace {
       },
     },
     {
-      note: "verify's attempt starts. The host hasn't decided yet whether to accept implement's result.",
+      note: "verify's attempt starts. It checks implement's first attempt, which nobody has accepted.",
       expect: "applied",
       build: (ctx) => {
         const d = ctx.dispatchFor("verify");
@@ -267,15 +269,15 @@ function happyPathScenario(): ScenarioTrace {
       },
     },
     {
-      note: "The host accepts implement's result and cites a check receipt. review still waits: it needs verify's result to be accepted, not implement's.",
-      expect: "applied",
+      note: "The host tries to accept implement's result and cites a check receipt. The reducer rejects it as verification_incomplete: the host can't accept implement before its verifier has accepted evidence.",
+      expect: "rejected",
       build: (ctx) => {
         const d = ctx.dispatchFor("implement");
         return ctx.acceptanceDecided("implement", d.attemptId, "accepted", ["check-implement-1"]);
       },
     },
     {
-      note: "verify proposes a result. review still waits, because it needs that result accepted.",
+      note: "verify proposes a result. The reducer asks the host to evaluate it.",
       expect: "applied",
       build: (ctx) => {
         const d = ctx.dispatchFor("verify");
@@ -283,11 +285,19 @@ function happyPathScenario(): ScenarioTrace {
       },
     },
     {
-      note: "The host accepts verify's result, so the reducer dispatches review.",
+      note: "The host accepts verify's result and cites a receipt. Now the reducer asks for implement's acceptance, and it dispatches review, which needed verify accepted.",
       expect: "applied",
       build: (ctx) => {
         const d = ctx.dispatchFor("verify");
         return ctx.acceptanceDecided("verify", d.attemptId, "accepted", ["check-verify-1"]);
+      },
+    },
+    {
+      note: "The host accepts implement's result, now that its verifier has accepted evidence.",
+      expect: "applied",
+      build: (ctx) => {
+        const d = ctx.dispatchFor("implement");
+        return ctx.acceptanceDecided("implement", d.attemptId, "accepted", ["check-implement-1"]);
       },
     },
     {
@@ -320,7 +330,7 @@ function happyPathScenario(): ScenarioTrace {
     id: "happy-path",
     title: "Happy path: implement, verify, review",
     summary:
-      "Three tasks in a row. verify starts as soon as implement has a result, before anyone has accepted it. review waits until verify's result is accepted.",
+      "Three tasks in a row. verify starts as soon as implement has a result, but implement can only be accepted after verify's result is. review waits until verify's result is accepted. An early attempt to accept implement is rejected.",
     graph,
     policy,
     actions,
@@ -417,7 +427,7 @@ function retryAndFencingScenario(): ScenarioTrace {
       },
     },
     {
-      note: "The host rejects the retry's result. implement has one attempt left, so the reducer schedules a third.",
+      note: "The host rejects the retry's result. implement has one attempt left, so the reducer schedules a third. That dispatch is marked as repairing the rejected attempt (with no receipts cited).",
       expect: "applied",
       build: (ctx) => {
         const retryAttempt = ctx.dispatchFor("implement");
@@ -602,12 +612,176 @@ function cancellationScenario(): ScenarioTrace {
 }
 
 // ---------------------------------------------------------------------------------------
+// Scenario 4: repair. A failing check rejects the task that produced the result. The
+// checker's accepted result is thrown out and runs again against the repaired attempt, and a
+// checker still running is told to stop and its late result is turned away.
+// ---------------------------------------------------------------------------------------
+
+const repairGraph: GraphSpec = {
+  schemaVersion: 1,
+  id: "repair-graph",
+  runId: "repair-run",
+  depth: 0,
+  revision: 1,
+  nodes: [
+    {
+      id: "implement",
+      role: "implementer",
+      objective: "Produce the requested patch",
+      acceptanceCriteria: ["Patch meets the task contract"],
+      limits: { maxTokens: 8000, maxToolCalls: 40 },
+    },
+    {
+      id: "verify",
+      role: "falsifier",
+      objective: "Try to break implement's patch with a check that must fail on a defect (a falsifier)",
+      acceptanceCriteria: ["The check runs against the exact attempt it was bound to"],
+      limits: { maxTokens: 4000, maxToolCalls: 20 },
+    },
+    {
+      id: "review",
+      role: "reviewer",
+      objective: "Review the verified patch",
+      acceptanceCriteria: ["Review finds no blocking issue"],
+      limits: { maxTokens: 4000, maxToolCalls: 20 },
+    },
+  ],
+  edges: [
+    { from: "implement", to: "verify", condition: "result_ready" },
+    { from: "verify", to: "review", condition: "accepted" },
+  ],
+};
+
+function repairScenario(): ScenarioTrace {
+  const graph = repairGraph;
+  const policy: RunPolicy = { maxConcurrent: 2, maxAttemptsPerNode: 3 };
+
+  const dispatched = (nodeId: string, note: string): Action => ({
+    note,
+    expect: "applied",
+    build: (ctx) => {
+      const d = ctx.dispatchFor(nodeId);
+      return ctx.attemptDispatched(nodeId, d.attemptId, d.fencingToken);
+    },
+  });
+  const proposed = (nodeId: string, note: string): Action => ({
+    note,
+    expect: "applied",
+    build: (ctx) => {
+      const d = ctx.dispatchFor(nodeId);
+      return ctx.resultProposed(d.attemptId, d.fencingToken);
+    },
+  });
+
+  const actions: Action[] = [
+    {
+      note: "The host starts the run. implement doesn't depend on anything, so the reducer dispatches it. verify is a falsifier: a checker that tries to break the patch.",
+      expect: "applied",
+      build: (ctx) => ctx.runStarted(graph, policy),
+    },
+    dispatched("implement", "implement's first attempt starts."),
+    proposed(
+      "implement",
+      "implement proposes a result. It is verifying, so no decision is asked for yet. verify is dispatched, bound to implement's first attempt.",
+    ),
+    dispatched("verify", "verify's first attempt starts, checking implement#1."),
+    proposed("verify", "verify proposes a result: its check fails on implement#1."),
+    {
+      note: "The host accepts verify's result, citing check-verify-1. The evidence is valid: the check reproducibly fails. Accepting it means implement's result has verified evidence, so the reducer now asks for implement's acceptance. It also reserves review, which needs verify accepted.",
+      expect: "applied",
+      build: (ctx) => {
+        const d = ctx.dispatchFor("verify");
+        return ctx.acceptanceDecided("verify", d.attemptId, "accepted", ["check-verify-1"]);
+      },
+    },
+    {
+      note: "The host rejects implement's result, citing the same receipt: a finding repairs the producer. implement#1 is superseded, verify's accepted result is thrown out (invalidated, back to pending, without costing a retry), review's reservation is dropped, and implement's second attempt is dispatched, marked as repairing implement#1 with that receipt.",
+      expect: "applied",
+      build: (ctx) => {
+        const d = ctx.dispatchNumberFor("implement", 1);
+        return ctx.acceptanceDecided("implement", d.attemptId, "rejected", ["check-verify-1"]);
+      },
+    },
+    dispatched("implement", "implement's second attempt starts."),
+    proposed("implement", "implement#2 proposes a result. verify is dispatched again, bound to implement#2."),
+    dispatched("verify", "verify's second attempt starts, checking implement#2."),
+    {
+      note: "While verify#2 is still running, the host rejects implement#2, citing check-implement-2, a required counterexample check the host re-ran. The reducer cancels verify#2, whose candidate is gone, and dispatches implement's third attempt, repairing implement#2.",
+      expect: "applied",
+      build: (ctx) => {
+        const d = ctx.dispatchNumberFor("implement", 2);
+        return ctx.acceptanceDecided("implement", d.attemptId, "rejected", ["check-implement-2"]);
+      },
+    },
+    {
+      note: "verify#2 proposes a result before it hears that it was cancelled. Its candidate is stale, so the reducer rejects it as stale_candidate and changes nothing.",
+      expect: "rejected",
+      build: (ctx) => {
+        const d = ctx.dispatchNumberFor("verify", 2);
+        return ctx.resultProposed(d.attemptId, d.fencingToken);
+      },
+    },
+    {
+      note: "verify#2 confirms that it stopped. verify goes back to pending without spending a retry: two attempts started, both invalidated.",
+      expect: "applied",
+      build: (ctx) => {
+        const d = ctx.dispatchNumberFor("verify", 2);
+        return ctx.attemptStopped(d.attemptId);
+      },
+    },
+    dispatched("implement", "implement's third attempt starts."),
+    proposed(
+      "implement",
+      "implement#3 proposes a result. verify is dispatched for the third time, bound to implement#3.",
+    ),
+    dispatched("verify", "verify's third attempt starts, checking implement#3."),
+    proposed("verify", "verify#3 proposes a result."),
+    {
+      note: "The host accepts verify#3's result, citing check-verify-3. The reducer asks for implement's acceptance and dispatches review, which needed verify accepted.",
+      expect: "applied",
+      build: (ctx) => {
+        const d = ctx.dispatchFor("verify");
+        return ctx.acceptanceDecided("verify", d.attemptId, "accepted", ["check-verify-3"]);
+      },
+    },
+    {
+      note: "The host accepts implement#3's result, now that its verifier has accepted evidence.",
+      expect: "applied",
+      build: (ctx) => {
+        const d = ctx.dispatchFor("implement");
+        return ctx.acceptanceDecided("implement", d.attemptId, "accepted", ["check-implement-3"]);
+      },
+    },
+    dispatched("review", "review's attempt starts."),
+    proposed("review", "review proposes a result."),
+    {
+      note: "The host accepts review's result. All three tasks are accepted, so the run ends as succeeded.",
+      expect: "applied",
+      build: (ctx) => {
+        const d = ctx.dispatchFor("review");
+        return ctx.acceptanceDecided("review", d.attemptId, "accepted", ["review-review-1"]);
+      },
+    },
+  ];
+
+  return runScenario({
+    id: "repair",
+    title: "Repair: a failing check sends implement back",
+    summary:
+      "verify's check fails, so the host rejects implement instead of retrying verify. verify's result is thrown out and runs again against each new implement attempt, without using up its own retries. implement is only accepted after verify's evidence is.",
+    graph,
+    policy,
+    actions,
+  });
+}
+
+// ---------------------------------------------------------------------------------------
 
 export function buildTrace(): TraceOutput {
   return {
     generator: "auto-pi-lot trace",
-    formatVersion: 1,
-    scenarios: [happyPathScenario(), retryAndFencingScenario(), cancellationScenario()],
+    formatVersion: 2,
+    scenarios: [happyPathScenario(), retryAndFencingScenario(), cancellationScenario(), repairScenario()],
   };
 }
 

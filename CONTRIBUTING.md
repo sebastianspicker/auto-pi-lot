@@ -37,8 +37,8 @@ Anything with side effects (storage, worker processes) becomes a new package tha
 ## Pull requests
 
 - Keep changes focused and describe how changed behavior was checked.
-- Changes to wire formats or run semantics need a short decision record in
-  [docs/decisions/](docs/decisions/README.md).
+- Changes to wire formats or run semantics need a short written rationale in the pull
+  request: the context, the decision and its consequences.
 - Don't mark a work package as implemented without evidence; see the
   [roadmap](docs/roadmap.md).
 - Never commit credentials, transcripts or local runtime state.

@@ -1,7 +1,7 @@
 import type { CodingSession } from "@auto-pi-lot/core/session";
 import type { createAgentSession } from "@earendil-works/pi-coding-agent";
 
-import { mapPiEvent } from "./map-event.js";
+import { createPiEventMapper } from "./map-event.js";
 
 export type { CodingSession, SessionEvent } from "@auto-pi-lot/core/session";
 
@@ -15,12 +15,25 @@ export type PiSessionFactory = typeof createAgentSession;
 export async function openPiSession(factory: PiSessionFactory, options: PiSessionOptions): Promise<CodingSession> {
   const { session } = await factory(options);
   return {
-    prompt: (text) => session.prompt(text),
+    prompt: (text) => session.prompt(text, { expandPromptTemplates: false }),
     abort: () => session.abort(),
     dispose: () => session.dispose(),
-    subscribe: (listener) =>
-      session.subscribe((event) => {
-        for (const mapped of mapPiEvent(event)) listener(mapped);
-      }),
+    subscribe: (listener) => {
+      // The SDK emits every event to every subscriber, so each subscriber gets its own mapper.
+      const map = createPiEventMapper();
+      return session.subscribe((event) => {
+        for (const mapped of map(event)) {
+          try {
+            listener(mapped);
+          } catch (error) {
+            // The SDK calls subscribers without try/catch: a throw here would skip its other
+            // listeners and persistence. Surface the consumer bug asynchronously instead.
+            queueMicrotask(() => {
+              throw error;
+            });
+          }
+        }
+      });
+    },
   };
 }

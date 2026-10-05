@@ -70,6 +70,16 @@ Cancelling a run stops running attempts and cancels work that has not started. T
 only marked cancelled once every outstanding acceptance decision has been answered. Events
 that arrive after that point are rejected. [README: Cancellation]
 
+### Repair
+
+When a check fails, the host rejects the task that produced the result, not the checker. In
+the repair scenario *verify* finds a failure in *implement*'s first attempt and the host
+rejects *implement*. *verify*'s result is thrown out and runs again against the new
+*implement* attempt, without using up *verify*'s own retries. A checker that is still running
+when its attempt is replaced is told to stop, and a result it sends late is rejected. The
+reducer asks for *implement*'s acceptance only after *verify*'s evidence for that same attempt
+has been accepted. [README: Repair]
+
 ## Try it yourself
 
 You need Node.js 22.19 or newer. You do not need any model credentials, and nothing below
@@ -124,7 +134,7 @@ it is not built yet.
 | [`packages/pi`](packages/pi/README.md) | Everything that touches the Pi software development kit (SDK): the session adapter and the `/graph` extension |
 | [`packages/cli`](packages/cli/README.md) | The `demo` and `trace` commands, and later the local supervisor |
 | [`site/`](site) | The trace viewer published to GitHub Pages |
-| [`docs/`](docs/architecture.md) | Architecture, design, roadmap and decision records |
+| [`docs/`](docs/architecture.md) | Architecture, design and roadmap |
 
 The rules about which package may use which (for example, only `packages/pi` may use the Pi
 SDK) are checked automatically by the Biome linter as part of `npm run lint`. [README:
@@ -138,7 +148,6 @@ Repository layout]
 - [Roadmap](docs/roadmap.md): milestones and current status.
 - [Acceptance scenarios](docs/acceptance-matrix.md): the failure cases the finished system must
   handle before it can be called done.
-- [Decision records](docs/decisions/README.md): why things are the way they are.
 
 ## Contributing and license
 
@@ -154,6 +163,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 - The benefits described above are design goals. Whether graph mode produces better coding
   results than a single Pi session has not been measured; that measurement is a planned,
   separately authorised step. [Roadmap: M3, M6; Design §14]
+- Turning check and review receipts into a finding is left to the host, which does not exist
+  yet; the repair scenario scripts that decision by hand.
 - The `/graph` command exists only as a placeholder.
 
 ## Glossary

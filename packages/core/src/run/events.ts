@@ -58,14 +58,24 @@ export type ResultProposedEvent = z.infer<typeof ResultProposedEventSchema>;
  * The host's own acceptance gate outcome. AP-12 will produce this event from check/review
  * receipts; here it is an input the reducer consumes, not something it computes.
  */
-export const AcceptanceDecidedEventSchema = z.strictObject({
-  type: z.literal("acceptance_decided"),
-  ...journalEventBase,
-  nodeId: IdSchema,
-  attemptId: IdSchema,
-  decision: AcceptanceDecisionSchema,
-  receiptIds: z.array(IdSchema),
-});
+export const AcceptanceDecidedEventSchema = z
+  .strictObject({
+    type: z.literal("acceptance_decided"),
+    ...journalEventBase,
+    nodeId: IdSchema,
+    attemptId: IdSchema,
+    decision: AcceptanceDecisionSchema,
+    receiptIds: z.array(IdSchema),
+  })
+  .superRefine((event, ctx) => {
+    if (event.decision === "accepted" && event.receiptIds.length === 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["receiptIds"],
+        message: "An accepted decision requires at least one receipt",
+      });
+    }
+  });
 export type AcceptanceDecidedEvent = z.infer<typeof AcceptanceDecidedEventSchema>;
 
 export const AttemptFailedEventSchema = z.strictObject({

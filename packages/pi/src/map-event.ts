@@ -1,4 +1,9 @@
-import { MAX_SESSION_ERROR_MESSAGE_LENGTH, type SessionEvent, type UsageSource } from "@auto-pi-lot/core/session";
+import {
+  MAX_SESSION_ERROR_MESSAGE_LENGTH,
+  type SessionEvent,
+  type SettledReason,
+  type UsageSource,
+} from "@auto-pi-lot/core/session";
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 
 /** The `messages` array on an `agent_end` event; one entry per role in the run's transcript. */
@@ -16,6 +21,10 @@ interface UsageLike {
   output: number;
   cacheRead: number;
   cacheWrite: number;
+}
+
+function isZeroUsage(usage: UsageLike): boolean {
+  return usage.input === 0 && usage.output === 0 && usage.cacheRead === 0 && usage.cacheWrite === 0;
 }
 
 function mapUsage(usage: UsageLike | undefined, source: UsageSource): SessionEvent {
@@ -37,54 +46,83 @@ function lastAssistantMessage(messages: readonly AgentRunMessage[]): AssistantRu
   return [...messages].reverse().find((message): message is AssistantRunMessage => message.role === "assistant");
 }
 
-function boundErrorMessage(message: string): string {
-  return message.length > MAX_SESSION_ERROR_MESSAGE_LENGTH
-    ? message.slice(0, MAX_SESSION_ERROR_MESSAGE_LENGTH)
-    : message;
+const FALLBACK_ERROR_MESSAGE = "Agent run ended in error";
+
+function boundErrorMessage(message: string | undefined): string {
+  const trimmed = message?.trim() ?? "";
+  if (trimmed === "") return FALLBACK_ERROR_MESSAGE;
+  return trimmed.length > MAX_SESSION_ERROR_MESSAGE_LENGTH
+    ? trimmed.slice(0, MAX_SESSION_ERROR_MESSAGE_LENGTH).trim()
+    : trimmed;
 }
 
-function mapAgentEnd(event: Extract<AgentSessionEvent, { type: "agent_end" }>): SessionEvent[] {
-  // A retryable failure keeps the run going internally; it has not settled yet.
-  if (event.willRetry) return [];
+interface RunOutcome {
+  reason: SettledReason;
+  errorMessage?: string | undefined;
+  willRetry: boolean;
+}
 
+function outcomeOfAgentEnd(event: Extract<AgentSessionEvent, { type: "agent_end" }>): RunOutcome {
   const assistant = lastAssistantMessage(event.messages);
-  if (assistant === undefined) {
-    // No assistant turn completed this run, e.g. aborted before any model response.
-    return [{ type: "settled", reason: "aborted" }];
-  }
-  if (assistant.stopReason === "aborted") {
-    return [{ type: "settled", reason: "aborted" }];
+  // No assistant turn completed this run, e.g. aborted before any model response.
+  if (assistant === undefined || assistant.stopReason === "aborted") {
+    return { reason: "aborted", willRetry: event.willRetry };
   }
   if (assistant.stopReason === "error") {
-    const message = boundErrorMessage(assistant.errorMessage ?? "Agent run ended in error");
-    return [
-      { type: "error", message },
-      { type: "settled", reason: "error" },
-    ];
+    return { reason: "error", errorMessage: assistant.errorMessage, willRetry: event.willRetry };
   }
-  return [{ type: "settled", reason: "completed" }];
+  return { reason: "completed", willRetry: event.willRetry };
+}
+
+function mapAssistantUsage(message: AssistantRunMessage): SessionEvent {
+  // The SDK synthesises a zero-usage message for a failed or aborted run; that is no measurement.
+  if ((message.stopReason === "error" || message.stopReason === "aborted") && isZeroUsage(message.usage)) {
+    return mapUsage(undefined, "turn");
+  }
+  return mapUsage(message.usage, "turn");
 }
 
 /**
- * Maps one Pi SDK session event to zero or more provider-neutral session events.
- * Pure and total: never throws, and ignores SDK event types this port doesn't surface.
+ * Creates a stateful mapper from Pi SDK session events to provider-neutral session events.
+ * `agent_end` can fire several times per prompt and may announce a retry that never happens
+ * (abort during backoff), so `settled` and `error` are derived at `agent_settled`, which the SDK
+ * emits exactly once per prompt, from the last `agent_end` seen. Use one mapper per subscriber.
+ * Never throws, and ignores SDK event types this port doesn't surface.
  */
-export function mapPiEvent(event: AgentSessionEvent): SessionEvent[] {
-  switch (event.type) {
-    case "message_end":
-      if (event.message.role !== "assistant") return [];
-      return [mapUsage(event.message.usage, "turn")];
-    case "compaction_end":
-      // Compaction summaries are themselves LLM calls; usage is optional per the SDK's
-      // own declared `CompactionResult` type when the summary run didn't report it.
-      return [mapUsage(event.result?.usage, "compaction")];
-    case "tool_execution_start":
-      return [{ type: "tool_call", callId: event.toolCallId, toolName: event.toolName }];
-    case "tool_execution_end":
-      return [{ type: "tool_result", callId: event.toolCallId, isError: event.isError }];
-    case "agent_end":
-      return mapAgentEnd(event);
-    default:
-      return [];
-  }
+export function createPiEventMapper(): (event: AgentSessionEvent) => SessionEvent[] {
+  let outcome: RunOutcome | undefined;
+
+  return (event) => {
+    switch (event.type) {
+      case "message_end":
+        if (event.message.role !== "assistant") return [];
+        return [mapAssistantUsage(event.message)];
+      case "compaction_end":
+        // Compaction summaries are themselves LLM calls; usage is optional per the SDK's
+        // own declared `CompactionResult` type when the summary run didn't report it.
+        return [mapUsage(event.result?.usage, "compaction")];
+      case "tool_execution_start":
+        return [{ type: "tool_call", callId: event.toolCallId, toolName: event.toolName }];
+      case "tool_execution_end":
+        return [{ type: "tool_result", callId: event.toolCallId, isError: event.isError }];
+      case "agent_end":
+        outcome = outcomeOfAgentEnd(event);
+        return [];
+      case "agent_settled": {
+        const recorded = outcome;
+        outcome = undefined;
+        // A recorded retry that never ran means the run was aborted during backoff.
+        if (recorded === undefined || recorded.willRetry) return [{ type: "settled", reason: "aborted" }];
+        if (recorded.reason === "error") {
+          return [
+            { type: "error", message: boundErrorMessage(recorded.errorMessage) },
+            { type: "settled", reason: "error" },
+          ];
+        }
+        return [{ type: "settled", reason: recorded.reason }];
+      }
+      default:
+        return [];
+    }
+  };
 }

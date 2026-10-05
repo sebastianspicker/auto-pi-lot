@@ -44,9 +44,118 @@ function findCycleNodes(nodeIds: ReadonlySet<string>, adjacency: ReadonlyMap<str
 }
 
 /**
+ * Strongly connected components of a graph over vertices `0..adjacency.length - 1`: an
+ * iterative Tarjan, so a deep graph cannot exhaust the call stack. Returns each vertex's
+ * component number.
+ */
+function stronglyConnectedComponents(adjacency: readonly (readonly number[])[]): number[] {
+  const count = adjacency.length;
+  const index = Array<number>(count).fill(-1);
+  const lowLink = Array<number>(count).fill(0);
+  const onStack = Array<boolean>(count).fill(false);
+  const component = Array<number>(count).fill(-1);
+  const stack: number[] = [];
+  const frames: { vertex: number; nextSuccessor: number }[] = [];
+  let nextIndex = 0;
+  let nextComponent = 0;
+
+  const enter = (vertex: number): void => {
+    index[vertex] = nextIndex;
+    lowLink[vertex] = nextIndex;
+    nextIndex += 1;
+    stack.push(vertex);
+    onStack[vertex] = true;
+    frames.push({ vertex, nextSuccessor: 0 });
+  };
+
+  for (let root = 0; root < count; root += 1) {
+    if (index[root] !== -1) continue;
+    enter(root);
+    while (frames.length > 0) {
+      const frame = frames[frames.length - 1] as { vertex: number; nextSuccessor: number };
+      const vertex = frame.vertex;
+      const successor = adjacency[vertex]?.[frame.nextSuccessor];
+
+      if (successor !== undefined) {
+        frame.nextSuccessor += 1;
+        if (index[successor] === -1) {
+          enter(successor);
+        } else if (onStack[successor]) {
+          lowLink[vertex] = Math.min(lowLink[vertex] as number, index[successor] as number);
+        }
+        continue;
+      }
+
+      frames.pop();
+      if (lowLink[vertex] === index[vertex]) {
+        for (let member = stack.pop(); member !== undefined; member = stack.pop()) {
+          onStack[member] = false;
+          component[member] = nextComponent;
+          if (member === vertex) break;
+        }
+        nextComponent += 1;
+      }
+      const parent = frames[frames.length - 1];
+      if (parent !== undefined) {
+        lowLink[parent.vertex] = Math.min(lowLink[parent.vertex] as number, lowLink[vertex] as number);
+      }
+    }
+  }
+  return component;
+}
+
+/**
+ * Every `result_ready` edge `P -> V` (`V` verifies `P`) on which the reducer would deadlock:
+ * `V`'s acceptance waits for `P`'s acceptance while `P`'s acceptance waits for `V`'s. Over the
+ * wait-for graph of the events "result of N" (`R:N`) and "acceptance of N" (`A:N`): `A:N`
+ * requires `R:N` and `A:V` for each verifying node `V` of `N`; `R:N` requires `R:P` for each
+ * `result_ready` producer `P` and `A:P` for each `accepted` producer `P`. The edge deadlocks
+ * exactly when its requirement `A:P -> A:V` lies on a cycle, that is, when `A:P` and `A:V` share
+ * a strongly connected component. One linear pass over the wait-for graph finds them all. This
+ * replaces decision 0005's path rule (item 1), which also rejected graphs that cannot deadlock.
+ *
+ * Only meaningful on an acyclic graph with known endpoints.
+ */
+function findVerifierWaits(graph: GraphSpec, nodeIds: ReadonlySet<string>): ValidationIssue[] {
+  // Vertex `2i` is the acceptance of node `i`, vertex `2i + 1` its result.
+  const position = new Map<string, number>();
+  for (const nodeId of nodeIds) position.set(nodeId, position.size);
+  const requires = Array.from({ length: position.size * 2 }, (_, vertex) => (vertex % 2 === 0 ? [vertex + 1] : []));
+  const usable = (edge: GraphSpec["edges"][number]): boolean =>
+    position.has(edge.from) && position.has(edge.to) && edge.from !== edge.to;
+  for (const edge of graph.edges) {
+    if (!usable(edge)) continue;
+    const from = position.get(edge.from) as number;
+    const to = position.get(edge.to) as number;
+    if (edge.condition === "accepted") {
+      requires[to * 2 + 1]?.push(from * 2);
+    } else {
+      requires[to * 2 + 1]?.push(from * 2 + 1);
+      requires[from * 2]?.push(to * 2);
+    }
+  }
+  const component = stronglyConnectedComponents(requires);
+
+  const issues: ValidationIssue[] = [];
+  graph.edges.forEach((edge, index) => {
+    if (edge.condition !== "result_ready" || !usable(edge)) return;
+    const from = position.get(edge.from) as number;
+    const to = position.get(edge.to) as number;
+    if (component[from * 2] !== component[to * 2]) return;
+    issues.push({
+      code: "verifier_waits_for_acceptance",
+      path: ["edges", index],
+      message: `Verifying node ${edge.to} of ${edge.from} waits for ${edge.from}'s acceptance`,
+    });
+  });
+  return issues;
+}
+
+/**
  * Never throws on any input. Collects every semantic issue rather than stopping at
  * the first: duplicate identities, unreachable endpoints, self/duplicate edges,
- * cycles, ownership-by-depth shape, and the depth-2 delegation ceiling.
+ * cycles, ownership-by-depth shape, the depth-2 delegation ceiling, and (on an acyclic graph)
+ * verifying nodes that would wait for their producer's acceptance.
  */
 export function validateGraph(
   input: unknown,
@@ -115,9 +224,11 @@ export function validateGraph(
     }
   });
 
-  for (const nodeId of findCycleNodes(nodeIds, adjacency)) {
+  const cycleNodes = findCycleNodes(nodeIds, adjacency);
+  for (const nodeId of cycleNodes) {
     issues.push({ code: "cycle", path: ["nodes"], message: `Graph contains a cycle at ${nodeId}` });
   }
+  if (cycleNodes.length === 0) issues.push(...findVerifierWaits(graph, nodeIds));
 
   if (issues.length > 0) return { ok: false, issues };
   return { ok: true, graph: graph as ValidatedGraph };

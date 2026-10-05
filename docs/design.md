@@ -45,7 +45,7 @@ code that exists today, see [architecture](architecture.md); for progress, see t
 
 Three packages exist today: `core` (the deterministic decision logic, independent of any
 model provider), `pi` (all code that uses the Pi software development kit, or SDK) and `cli`
-(the operator's entry point), per [decision 0004](decisions/0004-three-packages.md). The
+(the operator's entry point), per decision 0004. The
 [architecture page](architecture.md) covers the current code, the enforced boundaries and
 where new code goes; this page does not repeat it. [Design: Background]
 
@@ -76,8 +76,8 @@ Background]
 
 ## Conventions
 
-A change to the behaviour described here needs a short decision record (ADR) in
-[docs/decisions/](decisions/) and matching tests of the data format or failure. Status is
+A change to the behaviour described here needs a short written decision record and
+matching tests of the data format or failure. Status is
 tracked per work package; an entry is updated only with evidence tied to the exact source version that implements it. [Design:
 Conventions]
 
@@ -145,7 +145,7 @@ Future effect packages, each created with its first implementation:
 never the whole, so SDK-specific code cannot reach into run decisions. An interface to an
 effect (a *port*), such as a journal store or a worker dispatcher, is added to `core` in the
 same change as its first implementation and shaped by what the reducer and that
-implementation actually need ([decision 0004](decisions/0004-three-packages.md)). Once they
+implementation actually need (decision 0004). Once they
 exist, `storage` and `worker` implement the ports `core` declares for them. This avoids one
 all-purpose, changeable "controller" object and avoids handing the whole database to every
 component. Pi SDK imports stay inside `pi`; the deterministic reducer holds no adapter import

@@ -7,7 +7,7 @@ session port from core (`@auto-pi-lot/core/session`), never the run reducer. Bio
 | Module | Entry point | Responsibility |
 | --- | --- | --- |
 | `src/session.ts` | `@auto-pi-lot/pi` | `openPiSession`: wraps an injected `createAgentSession` factory as a core `CodingSession` |
-| `src/map-event.ts` | internal | `mapPiEvent`: pure, total mapping from SDK events to core `SessionEvent`s |
+| `src/map-event.ts` | internal | `createPiEventMapper`: total mapping from SDK events to core `SessionEvent`s, stateful only for the end of a prompt |
 | `src/extension.ts` | `@auto-pi-lot/pi/extension`, `pi.extensions` | Pi extension: registers `/graph`, which currently reports development status only |
 
 ## Session adapter
@@ -17,14 +17,24 @@ nothing. Scope tools/resources before using it for autonomous work. Prompt compl
 task acceptance.
 
 `CodingSession.subscribe` wraps the underlying `AgentSession`'s own event stream and maps each
-SDK event to zero or more session events. Token usage comes from an assistant message's or a
-compaction summary's `usage` field and is qualified `"reported"` or `"unknown"`; the SDK's
-declared `CompactionResult.usage` is genuinely optional, so a missing usage is never reported
-as zero. Tool execution start/end map to `tool_call`/`tool_result`. `agent_end` maps to
-`settled` (`"completed"`, `"aborted"`, or `"error"`, read from the run's last assistant
-message), plus a bounded `error` event when that message's stop reason is `"error"`. An
-`agent_end` that will retry has not settled yet and maps to nothing. Unknown SDK event types
-are ignored. `"completed"` also covers length/tool-use stop reasons.
+SDK event to zero or more session events, with one mapper per subscriber. Token usage comes from
+an assistant message's or a compaction summary's `usage` field and is qualified `"reported"` or
+`"unknown"`; the SDK's declared `CompactionResult.usage` is genuinely optional, so a missing usage
+is never reported as zero. The all-zero usage on the message the SDK synthesises for a failed or
+aborted run is no measurement and is also `"unknown"`. Tool execution start/end map to
+`tool_call`/`tool_result`.
+
+`agent_end` can fire several times within one prompt and can announce a retry that never happens,
+so it maps to nothing by itself. `settled` is emitted on the SDK's `agent_settled`, once per
+prompt, with its reason (`"completed"`, `"aborted"`, or `"error"`) taken from the last `agent_end`'s
+last assistant message, plus a bounded `error` event first when that reason is `"error"`. A settle
+with no `agent_end`, or after an `agent_end` that meant to retry, is `"aborted"`. Unknown SDK event
+types are ignored. `"completed"` also covers length/tool-use stop reasons.
+
+Prompts are sent verbatim with template and command expansion disabled, so task text starting with
+`/` never runs an extension command. A listener that throws does not disturb the SDK's event loop
+or other listeners; the error is rethrown asynchronously. The SDK rejects `prompt()` while a
+previous prompt is still streaming, so callers serialize prompts.
 
 ## Extension
 

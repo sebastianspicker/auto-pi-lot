@@ -19,7 +19,7 @@
     "fingerprint": "tsx scripts/source-fingerprint.ts",
     "check": "npm run build && npm run lint && npm run links",
     "demo": "npm run build && node packages/cli/dist/index.js demo",
-    "site": "npm run build && node packages/cli/dist/index.js trace > site/trace.json"
+    "site": "npm run build && node packages/cli/dist/index.js trace > site/trace.json.tmp && mv site/trace.json.tmp site/trace.json"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.14",

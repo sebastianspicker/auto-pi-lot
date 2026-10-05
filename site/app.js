@@ -8,15 +8,15 @@ const ASPECTS = [
   ["pending", "·", "pending"],
   ["ready", "○", "ready to start"],
   ["running", "●", "running"],
+  ["waiting", "…", "waiting for children, input or approval"],
   ["unverified", "◐", "result awaiting acceptance"],
-  // Decision 0005 (not implemented yet): a producer's result held until its verifying nodes finish.
   ["verifying", "◒", "result waiting for its checks"],
   ["accepted", "✓", "accepted"],
-  // Decision 0005: a consumed result that was invalidated when its producer was repaired.
   ["invalidated", "↺", "result thrown out, waiting again"],
   ["failed", "✗", "rejected, failed or exhausted"],
   ["cancelled", "⊘", "cancelled"],
 ];
+const WAITING = new Set(["waiting_children", "waiting_input", "waiting_approval"]);
 const GLYPH = Object.fromEntries(ASPECTS.map(([aspect, glyph]) => [aspect, glyph]));
 const RUN_GLYPH = { running: "●", cancelling: "◌", succeeded: "✓", failed: "✗", cancelled: "⊘" };
 
@@ -38,6 +38,7 @@ const pad = (index) => String(index + 1).padStart(2, "0");
 
 /** Node state folded into one aspect: execution progress and result trust together. */
 function aspectOf(node) {
+  if (node === undefined) return "pending";
   if (node.execution === "cancelled") return "cancelled";
   if (node.execution === "failed" || node.execution === "exhausted" || node.disposition === "rejected") {
     return "failed";
@@ -47,6 +48,7 @@ function aspectOf(node) {
   if (node.disposition === "verifying") return "verifying";
   if (node.execution === "result_ready") return "unverified";
   if (node.execution === "running") return "running";
+  if (WAITING.has(node.execution)) return "waiting";
   if (node.execution === "ready") return "ready";
   return "pending";
 }
@@ -56,6 +58,7 @@ function describeNode(node) {
   if (node.disposition !== null) parts.push(node.disposition);
   if (node.failureCategory) parts.push(node.failureCategory);
   parts.push(`${node.attemptCount} ${node.attemptCount === 1 ? "attempt" : "attempts"}`);
+  if (node.invalidatedAttemptCount > 0) parts.push(`${node.invalidatedAttemptCount} invalidated`);
   return parts.join(", ");
 }
 
@@ -118,7 +121,15 @@ function argumentsOf(event) {
 function describeCommand(command) {
   switch (command.type) {
     case "dispatch":
-      return `dispatch ${label(command.attemptId)} with token ${command.fencingToken}`;
+      return [
+        `dispatch ${label(command.attemptId)} with token ${command.fencingToken}`,
+        Object.keys(command.consumes ?? {}).length > 0
+          ? `on ${Object.values(command.consumes).map(label).join(", ")}`
+          : null,
+        command.repairOf ? `repairing ${label(command.repairOf.attemptId)}` : null,
+      ]
+        .filter(Boolean)
+        .join(", ");
     case "evaluate_acceptance":
       return `evaluate_acceptance for ${label(command.attemptId)}`;
     case "cancel_attempt":
@@ -459,12 +470,18 @@ async function main() {
   // Follow the hash when it changes under an open page: back button, pasted links, scenario links.
   window.addEventListener("hashchange", () => {
     const target = fromHash();
+    // A hash naming no scenario (the "Skip to the trace" link, "#trace") is not navigation: keep the view.
+    if (!view.trace.scenarios.some((scenario) => scenario.id === target.id)) return;
     go(target.id, target.step);
   });
 
-  document.body.classList.remove("is-loading");
-  const initial = fromHash();
-  go(initial.id, initial.step, { reveal: initial.step > 0 });
+  try {
+    document.body.classList.remove("is-loading");
+    const initial = fromHash();
+    go(initial.id, initial.step, { reveal: initial.step > 0 });
+  } catch (error) {
+    showLoadError(error);
+  }
 }
 
 main();

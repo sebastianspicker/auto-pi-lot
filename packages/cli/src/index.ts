@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { runDemo } from "./demo.js";
 import { runTrace } from "./trace.js";
 

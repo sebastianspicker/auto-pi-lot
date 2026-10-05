@@ -1,18 +1,47 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { dirname, join, relative, sep } from "node:path";
+import { dirname, join, normalize, relative, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-const EXCLUDED_DIRS = new Set(["node_modules", "dist", ".git", "coverage"]);
+const EXCLUDED_DIRS = new Set(["node_modules", "dist", ".git", "coverage", ".agents", ".claude"]);
 
-/** Raw link targets found in `](...)` markdown link syntax. */
+/** The path of a link target: unwraps `<angle brackets>` and drops an optional `"title"` or `'title'`. */
+function pathOfTarget(target: string): string {
+  const trimmed = target.trim();
+  const angle = /^<([^>]*)>/.exec(trimmed);
+  if (angle?.[1] !== undefined) return angle[1];
+  return /^(\S+)\s+(?:"[^"]*"|'[^']*')$/.exec(trimmed)?.[1] ?? trimmed;
+}
+
+/** `markdown` with fenced code blocks and inline code spans blanked out, so link syntax inside code is ignored. */
+function withoutCode(markdown: string): string {
+  let fence: string | undefined;
+  return markdown
+    .split("\n")
+    .map((line) => {
+      const marker = /^\s*(```|~~~)/.exec(line)?.[1];
+      if (fence !== undefined) {
+        if (marker === fence) fence = undefined;
+        return "";
+      }
+      if (marker !== undefined) {
+        fence = marker;
+        return "";
+      }
+      return line.replace(/`[^`]*`/g, "");
+    })
+    .join("\n");
+}
+
+/** Link targets (without any title) found in `](...)` markdown link syntax outside code. */
 export function findLinkTargets(markdown: string): string[] {
   const targets: string[] = [];
   const linkPattern = /]\(([^)]+)\)/g;
-  let match: RegExpExecArray | null = linkPattern.exec(markdown);
+  const text = withoutCode(markdown);
+  let match: RegExpExecArray | null = linkPattern.exec(text);
   while (match !== null) {
     const target = match[1];
-    if (target !== undefined) targets.push(target);
-    match = linkPattern.exec(markdown);
+    if (target !== undefined) targets.push(pathOfTarget(target));
+    match = linkPattern.exec(text);
   }
   return targets;
 }
@@ -35,8 +64,17 @@ export function stripAnchor(link: string): string {
   return hashIndex === -1 ? link : link.slice(0, hashIndex);
 }
 
+/** Decodes percent-escapes in a link path; a malformed escape leaves the raw path. */
+export function decodePath(path: string): string {
+  try {
+    return decodeURIComponent(path);
+  } catch {
+    return path;
+  }
+}
+
 /**
- * Check every relative markdown link in `markdown` (sourced from `sourceFile`) resolves to
+ * Check every relative or root-absolute markdown link in `markdown` (sourced from `sourceFile`) resolves to
  * an existing file or directory. Links that resolve outside the repository (for example the
  * predecessor review's references into a sibling `pi-graph` checkout) point at another
  * repository, so they are skipped: checking them would make the result depend on what else
@@ -54,9 +92,9 @@ export function checkMarkdownLinks(
   const dir = dirname(sourceFile);
   for (const rawLink of findLinkTargets(markdown)) {
     if (!isCheckableLink(rawLink)) continue;
-    const targetPath = stripAnchor(rawLink);
+    const targetPath = decodePath(stripAnchor(rawLink));
     if (targetPath.length === 0) continue;
-    const resolved = join(dir, targetPath);
+    const resolved = targetPath.startsWith("/") ? normalize(targetPath.slice(1)) : join(dir, targetPath);
     if (isOutsideRepository(resolved)) continue;
     if (!fileExists(resolved)) {
       errors.push(`${sourceFile}: broken link "${rawLink}" (resolved to ${resolved})`);

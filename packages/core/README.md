@@ -75,8 +75,11 @@ and an optional invalidation. These are the records that a journal `result_propo
 `unsupported_schema_version` when the input's `schemaVersion` differs from the current one).
 On success it then checks every semantic invariant and collects **all** issues rather than
 stopping at the first: `duplicate_node`, `unknown_edge_endpoint`, `self_edge`,
-`duplicate_edge`, `cycle`, `root_has_owner`, `child_missing_owner`, and
-`delegation_beyond_depth` (a depth-2 grandchild node cannot request further child graphs).
+`duplicate_edge`, `cycle`, `root_has_owner`, `child_missing_owner`,
+`delegation_beyond_depth` (a depth-2 grandchild node cannot request further child graphs), and,
+on an acyclic graph, `verifier_waits_for_acceptance` (a verifying node that would wait for its
+producer's acceptance while that acceptance waits for it, found exactly and in linear time as a
+cycle in the graph of what each result and acceptance waits for).
 Each `ValidationIssue` carries a closed `code`, a `path`, and a `message`.
 
 A `ValidatedGraph` is a branded type only `validateGraph` can produce; `getReadyNodes` accepts
@@ -102,9 +105,25 @@ reducer-internal `Command`s (`run/commands.ts`: `dispatch`, `evaluate_acceptance
 events. `replay(events)` (`run/replay.ts`) folds `decide` over a committed event log; this is
 the same code path recovery uses to rebuild a run's state.
 
-A rejected attempt is retried on the node the decision names, and dependents that consumed
-its `result_ready` output keep their state. [Decision 0005](../../docs/decisions/0005-producer-targeted-repair.md)
-(accepted, not implemented) moves repair to the producer and cascades invalidation.
+A node with a `result_ready` edge from producer `P` is a verifying node of `P`. Every attempt
+is bound to the current attempt of each of its producers (`consumes`, also carried on the
+`dispatch` command). A producer with verifying nodes waits in disposition `verifying`; the
+reducer emits `evaluate_acceptance` for it only once every verifying node holds an accepted
+result bound to its current attempt, and rejects an earlier accepted decision as
+`verification_incomplete`. A rejection applies at any time (fail fast). Rejecting an attempt
+invalidates every node bound to it, transitively: a reservation is dropped, an in-flight
+attempt gets `cancel_attempt` (a late result from it is `stale_candidate`), and a proposed or
+accepted result becomes `invalidated` and its node `pending`. Invalidated attempts do not count
+against a node's retries, and the next `dispatch` of the rejected node carries `repairOf`. A
+producer whose verifying node can never be accepted is never evaluated and its pending
+dependents fail. See decision 0005 and
+decision 0007.
+
+When a node is exhausted, its pending dependents, transitively, are failed with
+`dependency_failed`; nodes that already started run to their own outcome, but a retry of such a
+node fails the same way once its producer is gone. An accepted
+`acceptance_decided` must cite at least one receipt, otherwise it is rejected as
+`missing_evidence` (see decision 0006).
 
 Acceptance is idempotent per attempt: once an `acceptance_decided` has settled an attempt
 (accepted or rejected), a later decision for that same attempt is rejected rather than
@@ -136,13 +155,13 @@ the host stamps, never model output).
 | `attempt_failed` | `attemptId`, `fencingToken`, `category` (`FailureCategory`) | The attempt ended without a result |
 | `lease_expired` | `attemptId`, `fencingToken` | The host declared the attempt's lease lost |
 | `cancel_requested` | `reason` | Operator- or host-initiated cancellation of the run |
-| `attempt_stopped` | `attemptId` | A worker confirmed it stopped after `cancel_requested` |
+| `attempt_stopped` | `attemptId` | A worker confirmed it stopped after `cancel_attempt` (cancellation or invalidation) |
 
 Fencing tokens are checked against the exact attempt they were issued to: an event whose
 token does not match its attempt's stored token is rejected, never silently accepted. The
 dispatch protocol — persist `attempt_dispatched` before running the dispatch effect, report
 outcomes only as new events, answer `evaluate_acceptance` with `acceptance_decided` — is
-documented on `run/commands.ts`. See [decision 0001](../../docs/decisions/0001-engine-pure-reducer.md).
+documented on `run/commands.ts`. See decision 0001.
 
 ## Session events
 

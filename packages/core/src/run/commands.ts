@@ -1,3 +1,5 @@
+import type { RejectionRef } from "./state.js";
+
 /**
  * Commands are reducer-internal requests for effects that run outside `decide`. The host
  * performs the effect and reports back as a new journal event; `decide` never assumes a
@@ -19,6 +21,10 @@ export interface DispatchCommand {
   readonly nodeId: string;
   readonly attemptId: string;
   readonly fencingToken: number;
+  /** Producer node ID -> the producer attempt this attempt is bound to (decision 0005). */
+  readonly consumes: Readonly<Record<string, string>>;
+  /** The rejection this attempt repairs; the host builds the repair packet from its receipts. */
+  readonly repairOf: RejectionRef | null;
 }
 
 export interface EvaluateAcceptanceCommand {

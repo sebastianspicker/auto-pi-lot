@@ -18,7 +18,8 @@ export type IssueCode =
   | "cycle"
   | "root_has_owner"
   | "child_missing_owner"
-  | "delegation_beyond_depth";
+  | "delegation_beyond_depth"
+  | "verifier_waits_for_acceptance";
 
 export interface ValidationIssue {
   code: IssueCode;
