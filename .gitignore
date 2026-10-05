@@ -26,6 +26,7 @@ site/trace.json.tmp
 /docs/archive/scaffold-handoff.md
 /packages/cli/test/
 /packages/core/test/
+/packages/host/test/
 /packages/pi/test/
 /scripts/test/
 /scripts/check-ledger.ts

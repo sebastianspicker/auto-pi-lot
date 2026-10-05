@@ -3,12 +3,13 @@
 Plan revision 3, 2026-09-24.
 
 **In short.** auto-pi-lot is built in seven milestones, M0 to M6, made up of numbered *work
-packages* (AP-00 to AP-27). Only the starting scaffold (AP-00) is finished. Three packages
-are in progress (AP-01, AP-26, AP-27), but the evidence recorded for them predates a
-restructuring of the code and has to be reviewed again before their status can change.
-Everything else is not started, and none of the 41 acceptance scenarios is verified yet. The
-next step is AP-01, which needs no database, no worker process and no model calls. [Roadmap:
-header, table]
+packages* (AP-00 to AP-27). Only the starting scaffold (AP-00) is finished. Four packages
+are in progress: AP-01 (contracts), AP-26 (the reducer), AP-27 (repository gates) and, since
+5 October 2026, AP-07 (the host that runs a plan with fake workers from a journal and survives
+a restart; see decision 0008). The evidence
+recorded for the first three predates a restructuring of the code and has to be reviewed
+again before their status can change. Everything else is not started, and none of the 41
+acceptance scenarios is verified yet. [Roadmap: header, table]
 
 *About this page.* It is a plain-language edition of the roadmap for engineers and
 engineering leads who want to know where the project stands and what comes next. Bracketed
@@ -53,13 +54,15 @@ milestone unless it depends on something in it. [Roadmap: "Start with AP-01"]
 
 ## What comes next
 
-Start with **AP-01: versioned identities and execution/acceptance contracts**. It separates a
-worker's *proposed* result from the host's *acceptance* of it, gives every record a
-versioned identity, and defines how a task can depend on a result that is not yet accepted.
-Its first increment needs no database driver, no worker process and no model call. After it,
+The first increment of **AP-01: versioned identities and execution/acceptance contracts**
+exists: it separates a worker's *proposed* result from the host's *acceptance* of it, gives
+every record a versioned identity, and defines how a task can depend on a result that is not
+yet accepted. The reducer (AP-26) and a first host (AP-07) run on those contracts. The host
+is ahead of its planned prerequisites: it uses an interim file journal instead of the AP-04
+storage decision, and fake workers instead of the AP-08 worker processes. The next steps are
 AP-02 (complete plan checking), AP-03 (frozen permissions and role policy) and AP-04 (the
-storage decision) can progress independently against the agreed formats. [Roadmap: "Start
-with AP-01"]
+storage decision, which replaces the file journal behind the same port). [Roadmap: "Start
+with AP-01"; decision 0008]
 
 ## Gates that depend on real model use
 
@@ -92,8 +95,8 @@ decision 0004; see [architecture](architecture.md).
 
 ## Limitations of this overview
 
-- Status here is a snapshot of plan revision 3 (2026-09-24). The design document is authoritative if
-  the two disagree.
+- Status here is a snapshot of plan revision 3 (2026-09-24), updated for the host on
+  2026-10-05. The design document is authoritative if the two disagree.
 - The design document (§13) describes AP-01 to AP-25 as unimplemented work, while this page
   lists AP-01 as in progress. Both are true: work has started but
   nothing in AP-01 is complete. [Design §13; Roadmap: header]

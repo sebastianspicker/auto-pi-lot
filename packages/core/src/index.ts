@@ -5,6 +5,7 @@ export * from "./run/commands.js";
 export * from "./run/decide.js";
 export * from "./run/events.js";
 export * from "./run/evidence.js";
+export * from "./run/ports.js";
 export * from "./run/readiness.js";
 export * from "./run/replay.js";
 export * from "./run/state.js";

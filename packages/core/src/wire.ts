@@ -5,7 +5,9 @@ export const SCHEMA_VERSION = 1;
 
 export const SchemaVersionSchema = z.literal(SCHEMA_VERSION);
 
-export const IdSchema = z.string().trim().min(1);
+/** Ids are bounded so no record or file name can grow without limit. */
+export const MAX_ID_LENGTH = 256;
+export const IdSchema = z.string().trim().min(1).max(MAX_ID_LENGTH);
 export type Id = z.infer<typeof IdSchema>;
 
 export type IssueCode =

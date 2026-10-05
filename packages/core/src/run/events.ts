@@ -65,7 +65,7 @@ export const AcceptanceDecidedEventSchema = z
     nodeId: IdSchema,
     attemptId: IdSchema,
     decision: AcceptanceDecisionSchema,
-    receiptIds: z.array(IdSchema),
+    receiptIds: z.array(IdSchema).max(64),
   })
   .superRefine((event, ctx) => {
     if (event.decision === "accepted" && event.receiptIds.length === 0) {
@@ -98,7 +98,7 @@ export type LeaseExpiredEvent = z.infer<typeof LeaseExpiredEventSchema>;
 export const CancelRequestedEventSchema = z.strictObject({
   type: z.literal("cancel_requested"),
   ...journalEventBase,
-  reason: z.string().trim().min(1),
+  reason: z.string().trim().min(1).max(2000),
 });
 export type CancelRequestedEvent = z.infer<typeof CancelRequestedEventSchema>;
 

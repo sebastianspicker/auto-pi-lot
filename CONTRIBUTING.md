@@ -21,6 +21,7 @@ Other useful commands:
 | --- | --- |
 | `npm run format` | Apply Biome formatting and safe fixes |
 | `npm run demo` | Print the example graph, its topological order and its ready nodes |
+| `npm run fake-run` | Execute the example graph end to end through the host with stand-in workers, journaling to `.auto-pi-lot/` |
 | `npm run site` | Regenerate `site/trace.json` for the trace viewer |
 
 To view the trace viewer locally, run `npm run site`, then serve `site/` over HTTP (for
@@ -30,9 +31,9 @@ example `npx serve site` or `python3 -m http.server -d site`) and open it in a b
 
 [docs/architecture.md](docs/architecture.md) explains the three packages, the enforced
 import boundaries and where new code belongs. In short: deterministic decisions go in
-`packages/core`, Pi SDK code goes in `packages/pi`, and wiring goes in `packages/cli`.
-Anything with side effects (storage, worker processes) becomes a new package that depends on
-`core`.
+`packages/core`, the host loop and journal stores in `packages/host`, Pi SDK code in
+`packages/pi`, and wiring in `packages/cli`. Further side effects (worker processes, the
+supervisor) become new packages that depend on `core`.
 
 ## Pull requests
 

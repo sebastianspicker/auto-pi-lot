@@ -26,6 +26,7 @@ alone; `packages/pi` may use only the latter.
 | `run/readiness.ts` | `getReadyNodes` |
 | `run/decide.ts` | `decide`: the pure run reducer |
 | `run/replay.ts` | `replay` |
+| `run/ports.ts` | `JournalStore`, `WorkerPort`, `AcceptanceGate` and their request and outcome types: the interfaces the host needs, implemented outside `core` |
 | `session.ts` | `SessionEvent`, `CodingSession` (also the `./session` subpath) |
 
 ## Wire identity

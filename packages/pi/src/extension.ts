@@ -6,7 +6,7 @@ export default function autoPiLot(pi: ExtensionAPI): void {
     description: "Show auto-pi-lot graph mode development status",
     handler: async (_args, ctx) => {
       ctx.ui.notify(
-        "auto-pi-lot scaffold: graph execution is not available yet. Run npm run demo in the repository to inspect a validated graph.",
+        "auto-pi-lot: graph mode is not available in Pi yet. In the repository, npm run demo prints a validated graph and npm run fake-run executes one end to end with stand-in workers; no model is attached.",
         "info",
       );
     },

@@ -7,15 +7,18 @@
 [Pi coding agent](https://www.npmjs.com/package/@earendil-works/pi-coding-agent). In graph
 mode, a coding task is split into a plan of smaller tasks, each task is run by an AI agent
 with limits on retries, and no result is trusted until ordinary, non-AI code has checked it.
-Today only the decision-making core exists and is tested; it does not yet run real tasks.
-You can watch that core make decisions in the
+Today the decision-making core and the host that drives it exist and are tested: a plan runs
+end to end with stand-in workers, is written to a journal and survives a restart, but no
+real AI worker is attached yet. You can watch the core make decisions in the
 **[interactive trace viewer](https://sebastianspicker.github.io/auto-pi-lot/)**.
 
 > **Status: early foundation.** Built and tested: checking that a plan is well formed, the
-> decision function that runs a plan (the *reducer*), and the connection to Pi sessions.
-> Not built yet: saving state to disk, launching worker processes, the background
-> supervisor, and the `/graph on` command, so nothing runs real tasks end to end yet. See
-> the [roadmap](docs/roadmap.md). [README: Status]
+> decision function that runs a plan (the *reducer*), the *host* that drives it (it saves
+> every decision to an append-only journal before acting on it, and recovers a run after a
+> restart by replaying that journal), and the connection to Pi sessions. Not built yet:
+> launching worker processes, the background supervisor, the SQLite store and the
+> `/graph on` command, so nothing runs a *real* task end to end yet; the host runs plans with
+> stand-in workers. See the [roadmap](docs/roadmap.md). [README: Status]
 
 *About this page.* It is a plain-language edition of the project README, written for
 software engineers and engineering leads who use AI coding tools but do not know this
@@ -91,8 +94,16 @@ cd auto-pi-lot
 npm ci --ignore-scripts
 npm run check        # build, lint, import boundaries, docs checks
 npm run demo         # print a validated example graph and its ready nodes
+npm run fake-run     # run the example graph end to end with stand-in workers, journal in .auto-pi-lot/
 node packages/cli/dist/index.js trace   # print the scripted run traces as JSON
 ```
+
+`fake-run` executes the three-task example plan through the real host: every decision is
+appended to a journal file under `.auto-pi-lot/journal/` before the stand-in worker is
+started, the first attempt of *implement* is scripted to crash so the journal shows a retry,
+and the command prints the events and the final state. Run it again with
+`--resume <runId>` (after `--`) to rebuild that run from its journal. Nothing in it calls a
+model.
 
 To load the Pi extension, build first and point Pi at it:
 
@@ -130,9 +141,10 @@ it is not built yet.
 
 | Path | Contents |
 | --- | --- |
-| [`packages/core`](packages/core/README.md) | The deterministic core: data formats, plan checking, the reducer, evidence records and the interface to model sessions |
+| [`packages/core`](packages/core/README.md) | The deterministic core: data formats, plan checking, the reducer, evidence records, the ports the host needs and the interface to model sessions |
+| [`packages/host`](packages/host/README.md) | The host: the loop that persists each decision and then acts on it, the journal stores, and stand-in workers for testing |
 | [`packages/pi`](packages/pi/README.md) | Everything that touches the Pi software development kit (SDK): the session adapter and the `/graph` extension |
-| [`packages/cli`](packages/cli/README.md) | The `demo` and `trace` commands, and later the local supervisor |
+| [`packages/cli`](packages/cli/README.md) | The `demo`, `trace` and `run` commands, and later the local supervisor |
 | [`site/`](site) | The trace viewer published to GitHub Pages |
 | [`docs/`](docs/architecture.md) | Architecture, design and roadmap |
 
@@ -157,14 +169,18 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Limitations
 
-- The project cannot yet run a coding task. Everything shown in the viewer is a scripted host
-  driving the real decision function; there are no real workers, no saved state and no model
-  calls. [README: Status; Architecture: What runs today]
+- The project cannot yet run a real coding task. The host runs plans only with the stand-in
+  worker and acceptance gate that ship with it; there are no worker processes and no model
+  calls. Everything shown in the viewer is a scripted host driving the real decision
+  function. [README: Status; Architecture: What runs today]
+- The journal file is an interim store. The storage decision (SQLite or otherwise) is still
+  open, and a worker that hangs is only noticed when the run is resumed after a restart
+  (decision 0008).
 - The benefits described above are design goals. Whether graph mode produces better coding
   results than a single Pi session has not been measured; that measurement is a planned,
   separately authorised step. [Roadmap: M3, M6; Design §14]
-- Turning check and review receipts into a finding is left to the host, which does not exist
-  yet; the repair scenario scripts that decision by hand.
+- Turning check and review receipts into a finding is not implemented: the host asks an
+  injected acceptance gate, and the only gates that exist are scripted ones.
 - The `/graph` command exists only as a placeholder.
 
 ## Glossary
