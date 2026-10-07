@@ -257,8 +257,26 @@ export class RunHost {
       case "failed":
         return this.submit({ type: "attempt_failed", attemptId, fencingToken, category: valid.category });
       case "stopped":
-        return this.submit({ type: "attempt_stopped", attemptId });
+        return this.#reportStopped(attemptId, fencingToken);
     }
+  }
+
+  /**
+   * A `stopped` outcome for an attempt the host never asked to stop is a worker that quit on its
+   * own. The reducer rejects the `attempt_stopped` (the attempt is not `stopping`), and because a
+   * worker reports exactly once, nothing else would ever release that attempt's permit: the run
+   * would hang until a resume expired the lease. The host records the quit as `worker_crashed`
+   * instead, so the reducer retries or exhausts the node now.
+   */
+  async #reportStopped(attemptId: string, fencingToken: number): Promise<SubmitResult> {
+    const result = await this.submit({ type: "attempt_stopped", attemptId });
+    if (!result.applied && result.reason === "rejected" && result.rejection.code === "invalid_transition") {
+      const attempt = this.#state.attempts[attemptId];
+      if (attempt?.status === "dispatched" && attempt.fencingToken === fencingToken) {
+        return this.submit({ type: "attempt_failed", attemptId, fencingToken, category: "worker_crashed" });
+      }
+    }
+    return result;
   }
 
   /**

@@ -1,4 +1,5 @@
 import {
+  type AttemptStatus,
   type Command,
   canonicalJson,
   type DispatchCommand,
@@ -29,6 +30,16 @@ interface NodeSnapshot {
   readonly activeAttemptId: string | null;
 }
 
+/** One attempt's state as shown in a trace step, taken after that step applied. */
+interface AttemptSnapshot {
+  readonly nodeId: string;
+  readonly fencingToken: number;
+  readonly status: AttemptStatus;
+  /** Producer node ID -> the producer attempt this attempt consumed (decision 0005). */
+  readonly consumes: Readonly<Record<string, string>>;
+  readonly invalidated: boolean;
+}
+
 interface StepTrace {
   readonly index: number;
   readonly note: string;
@@ -38,6 +49,8 @@ interface StepTrace {
   readonly commands: readonly Command[];
   readonly run: { readonly status: string; readonly permitsInUse: number };
   readonly nodes: Readonly<Record<string, NodeSnapshot>>;
+  /** Every attempt the reducer knows after this step, by attempt id (format 3). */
+  readonly attempts: Readonly<Record<string, AttemptSnapshot>>;
 }
 
 interface ScenarioTrace {
@@ -51,9 +64,13 @@ interface ScenarioTrace {
   readonly replayMatches: boolean;
 }
 
+/**
+ * Format 3 adds `attempts` to every step (format 2 added `consumes` and `repairOf` to dispatch
+ * commands). The viewer in `site/` reads this shape.
+ */
 export interface TraceOutput {
   readonly generator: "auto-pi-lot trace";
-  readonly formatVersion: 2;
+  readonly formatVersion: 3;
   readonly scenarios: readonly ScenarioTrace[];
 }
 
@@ -149,19 +166,36 @@ class ScenarioContext {
   }
 }
 
+/** Records are built from entries so an id such as `__proto__` becomes an own key, never a prototype write. */
 function snapshotNodes(state: RunState): Record<string, NodeSnapshot> {
-  const nodes: Record<string, NodeSnapshot> = {};
-  for (const [nodeId, node] of Object.entries(state.nodes)) {
-    nodes[nodeId] = {
-      execution: node.execution,
-      disposition: node.disposition,
-      attemptCount: node.attemptCount,
-      invalidatedAttemptCount: node.invalidatedAttemptCount,
-      failureCategory: node.failureCategory,
-      activeAttemptId: node.activeAttemptId,
-    };
-  }
-  return nodes;
+  return Object.fromEntries(
+    Object.entries(state.nodes).map(([nodeId, node]): [string, NodeSnapshot] => [
+      nodeId,
+      {
+        execution: node.execution,
+        disposition: node.disposition,
+        attemptCount: node.attemptCount,
+        invalidatedAttemptCount: node.invalidatedAttemptCount,
+        failureCategory: node.failureCategory,
+        activeAttemptId: node.activeAttemptId,
+      },
+    ]),
+  );
+}
+
+function snapshotAttempts(state: RunState): Record<string, AttemptSnapshot> {
+  return Object.fromEntries(
+    Object.entries(state.attempts).map(([attemptId, attempt]): [string, AttemptSnapshot] => [
+      attemptId,
+      {
+        nodeId: attempt.nodeId,
+        fencingToken: attempt.fencingToken,
+        status: attempt.status,
+        consumes: { ...attempt.consumes },
+        invalidated: attempt.invalidated,
+      },
+    ]),
+  );
 }
 
 /**
@@ -206,6 +240,7 @@ function runScenario(params: {
       commands: result.commands,
       run: { status: state.status, permitsInUse: state.permitsInUse },
       nodes: snapshotNodes(state),
+      attempts: snapshotAttempts(state),
     });
   });
 
@@ -780,7 +815,7 @@ function repairScenario(): ScenarioTrace {
 export function buildTrace(): TraceOutput {
   return {
     generator: "auto-pi-lot trace",
-    formatVersion: 2,
+    formatVersion: 3,
     scenarios: [happyPathScenario(), retryAndFencingScenario(), cancellationScenario(), repairScenario()],
   };
 }

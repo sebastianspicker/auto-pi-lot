@@ -1,4 +1,5 @@
 export * from "./canonical.js";
+export * from "./graph/lint.js";
 export * from "./graph/spec.js";
 export * from "./graph/validate.js";
 export * from "./run/commands.js";

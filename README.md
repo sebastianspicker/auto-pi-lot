@@ -96,6 +96,7 @@ npm run check        # build, lint, import boundaries, docs checks
 npm run demo         # print a validated example graph and its ready nodes
 npm run fake-run     # run the example graph end to end with stand-in workers, journal in .auto-pi-lot/
 node packages/cli/dist/index.js trace   # print the scripted run traces as JSON
+node packages/cli/dist/index.js validate plan.json   # check your own plan file: issues, warnings, order, ready tasks
 ```
 
 `fake-run` executes the three-task example plan through the real host: every decision is
@@ -104,6 +105,8 @@ started, the first attempt of *implement* is scripted to crash so the journal sh
 and the command prints the events and the final state. Run it again with
 `--resume <runId>` (after `--`) to rebuild that run from its journal. Nothing in it calls a
 model.
+`run --graph <file>` executes your own plan with the stand-in worker, and the
+`--max-concurrent` and `--max-attempts` flags set the policy.
 
 To load the Pi extension, build first and point Pi at it:
 
@@ -144,7 +147,7 @@ it is not built yet.
 | [`packages/core`](packages/core/README.md) | The deterministic core: data formats, plan checking, the reducer, evidence records, the ports the host needs and the interface to model sessions |
 | [`packages/host`](packages/host/README.md) | The host: the loop that persists each decision and then acts on it, the journal stores, and stand-in workers for testing |
 | [`packages/pi`](packages/pi/README.md) | Everything that touches the Pi software development kit (SDK): the session adapter and the `/graph` extension |
-| [`packages/cli`](packages/cli/README.md) | The `demo`, `trace` and `run` commands, and later the local supervisor |
+| [`packages/cli`](packages/cli/README.md) | The `demo`, `trace`, `validate` and `run` commands, and later the local supervisor |
 | [`site/`](site) | The trace viewer published to GitHub Pages |
 | [`docs/`](docs/architecture.md) | Architecture, design and roadmap |
 

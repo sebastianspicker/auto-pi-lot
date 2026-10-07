@@ -29,12 +29,14 @@
         <p>
           These are recorded runs of the reducer in <code>@auto-pi-lot/core</code>, the part of auto-pi-lot that
           decides what happens next in a run. A test script plays the host and sends it events. Each line below is one
-          event and what the reducer did with it. When it rejects an event, it gives a reason and nothing changes. No
+          event and what the reducer did with it. The graph shows every task's state at the selected event and which attempt each check is bound to; the rows under the tasks follow each worker attempt through the run. When it rejects an event, it gives a reason and nothing changes. No
           AI model is involved.
         </p>
         <p class="status">
-          Only this core exists so far. Saving state, running workers and the <code>/graph on</code> command aren't
-          built yet, so none of these runs did real work.
+          Today the core and a host exist: the host writes every decision to an append-only journal before acting on it
+          and recovers a run by replaying that journal, but it runs plans with stand-in workers only. Worker processes,
+          the supervisor, the SQLite store and the <code>/graph on</code> command aren't built yet, so none of these
+          runs did real work.
         </p>
       </div>
 
@@ -48,7 +50,14 @@
         <p class="summary" id="scenario-summary"></p>
         <dl class="facts" id="facts"></dl>
 
-        <figure class="matrix-frame" aria-label="State of every node after each event">
+        <figure class="graph-frame" aria-label="Task graph">
+          <div class="graph-scroll">
+            <svg id="graph" role="img" aria-label="Task graph"><title>Task graph</title></svg>
+          </div>
+          <figcaption class="legend" id="graph-legend"></figcaption>
+        </figure>
+
+        <figure class="matrix-frame" aria-label="State of every node and attempt after each event">
           <div class="matrix-scroll">
             <table class="matrix" id="matrix"></table>
           </div>

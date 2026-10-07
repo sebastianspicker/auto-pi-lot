@@ -43,9 +43,10 @@ code that exists today, see [architecture](architecture.md); for progress, see t
 
 ## Background
 
-Three packages exist today: `core` (the deterministic decision logic, independent of any
-model provider), `pi` (all code that uses the Pi software development kit, or SDK) and `cli`
-(the operator's entry point), per decision 0004. The
+Four packages exist today: `core` (the deterministic decision logic, independent of any
+model provider), `host` (the loop that journals each decision before acting on it, per
+decision 0008), `pi` (all code that uses the Pi software development kit, or SDK) and `cli`
+(the operator's entry point); the first three packages follow decision 0004. The
 [architecture page](architecture.md) covers the current code, the enforced boundaries and
 where new code goes; this page does not repeat it. [Design: Background]
 
@@ -250,7 +251,9 @@ producer's acceptance is rejected, because neither could ever start. A failing f
 the producer, not the task that found it. The producer then gets a new attempt that carries the
 failing receipts. Every task that used the rejected result, and everything built on those, is
 cancelled or marked `invalidated` and runs again against the new result; these re-runs do not
-use up the verifying nodes' own retries. A failing deterministic check rejects the producer on
+use up the verifying nodes' own retries. During run cancellation, rejection still invalidates
+those results transitively, but their nodes settle as cancelled without another attempt
+(decision 0009). A failing deterministic check rejects the producer on
 its own. A model's judgment does not: a `fail` or `unclear` review leads to a fresh independent
 review of the same result, and only two reviews that agree settle it. A counterexample that
 caused a rejection becomes a required check for every later attempt of that producer.

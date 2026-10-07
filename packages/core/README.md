@@ -17,6 +17,7 @@ alone; `packages/pi` may use only the latter.
 | `wire.ts` | `SCHEMA_VERSION`/`SchemaVersionSchema`, `IdSchema`/`Id`, `IssueCode`, `ValidationIssue`, `parseDto` |
 | `canonical.ts` | `canonicalJson`/`digest`: one canonical JSON encoding and its SHA-256 identity |
 | `graph/spec.ts` | `Role`, `NodeLimits`, `NodeSpec`, `DependencyCondition`, `EdgeSpec`, `GraphSpec` |
+| `graph/lint.ts` | `GraphWarning`, `lintGraph` |
 | `graph/validate.ts` | `ValidatedGraph`, `validateGraph`, `topologicalOrder`, `parseGraphSpec` |
 | `run/status.ts` | `ExecutionState`, `ResultDisposition`, `FailureCategory`, `NodeStatus`, `isDependencySatisfied` |
 | `run/evidence.ts` | `ResultProposal`, `CheckReceipt`, `ReviewReceipt`, `AcceptanceRecord` |
@@ -93,6 +94,15 @@ Cross-graph ownership existence, parent/child depth increments, inherited permis
 global node limits, budget reservation, and requirement coverage require supervisor state
 and are not checked by this package alone.
 
+## Lint
+
+`lintGraph(graph: ValidatedGraph)` returns advisory `GraphWarning`s; a warning never makes a
+graph invalid. It is pure, never throws and reports in node order. `isolated_node`: a node in a
+graph of several nodes has no incoming and no outgoing edge. `checker_without_input`: a
+`verifier`, `falsifier` or `reviewer` has no incoming edge, so it has no producer to check.
+`unverified_producer`: an `implementer` or `integrator` has no outgoing `result_ready` edge, so
+its result is accepted on the gate's receipts alone. `validate` in the CLI prints these warnings.
+
 ## The run reducer
 
 `decide(state, event) → { state, commands, rejection? }` (`run/decide.ts`) is a total, pure
@@ -130,7 +140,11 @@ Acceptance is idempotent per attempt: once an `acceptance_decided` has settled a
 (accepted or rejected), a later decision for that same attempt is rejected rather than
 re-applied. Cancellation reconciles outstanding acceptance evaluations before becoming
 terminal: a cancelling run only reaches `cancelled` once every permit is released and no node
-is still awaiting its `evaluate_acceptance` decision.
+is still awaiting its `evaluate_acceptance` decision. Rejecting a result during cancellation
+still invalidates its consumers transitively. Their proposed or accepted results become
+`invalidated` and their nodes become `cancelled`, without retrying. Already-stopping workers
+retain their permits until they end; unrelated acceptance evaluations still settle normally
+(decision 0009).
 
 `RunState` (`run/state.ts`) is plain, readonly, JSON-serializable data: no `Map`/`Set`, and
 every optional dimension is `null` rather than an omitted key, so `canonicalJson`/deep-equal

@@ -63,8 +63,9 @@ For the finished product see the [design document](design.md); for progress see 
   in, and which tasks are ready to start. `trace` runs four scripted scenarios through the
   real reducer and prints every step as JSON; the
   [trace viewer](https://sebastianspicker.github.io/auto-pi-lot/) (`site/`) replays that
-  output. `run` executes the example plan through the host with the fake worker and gate,
-  writing the journal to a directory so the run can be inspected and resumed. [Architecture:
+  output. `validate` checks a plan file and lists its issues, warnings, task order and ready
+  tasks. `run` executes the example plan, or a plan file, through the host with the fake worker
+  and gate, writing the journal to a directory so the run can be inspected and resumed. [Architecture:
   What runs today]
 
 Nothing here launches a worker process or calls a model. The only actions on the outside
@@ -79,7 +80,7 @@ that is passed in from outside. [Architecture: What runs today]
 | [`@auto-pi-lot/core`](../packages/core/README.md) | The deterministic, provider-neutral core: data formats on the wire and their canonical identities, the plan format and its checking, the vocabulary of run states, journal events, the reducer and replay, evidence records, and the session interface | `zod` (a schema library) and `node:crypto` |
 | [`@auto-pi-lot/host`](../packages/host/README.md) | The host loop (`RunHost`), the in-memory and file journal stores, and the scripted fake worker and gate | `@auto-pi-lot/core` and Node's file system |
 | [`@auto-pi-lot/pi`](../packages/pi/README.md) | Everything tied to the Pi SDK: the session adapter and the Pi extension entry point | Only the session part of core (`@auto-pi-lot/core/session`), and the Pi SDK |
-| [`@auto-pi-lot/cli`](../packages/cli/README.md) | The operator's entry point (`demo`, `trace`, `run`) and the place where the parts are wired together | `@auto-pi-lot/core`, `@auto-pi-lot/host` |
+| [`@auto-pi-lot/cli`](../packages/cli/README.md) | The operator's entry point (`demo`, `trace`, `validate`, `run`) and the place where the parts are wired together | `@auto-pi-lot/core`, `@auto-pi-lot/host` |
 
 ```text
           @auto-pi-lot/core ──────────────────────────┐

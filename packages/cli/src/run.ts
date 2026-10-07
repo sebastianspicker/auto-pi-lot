@@ -7,16 +7,21 @@ import {
   type FailureCategory,
   type GraphSpec,
   type JournalEvent,
+  parseDto,
   type ResultDisposition,
   type RunPolicy,
+  RunPolicySchema,
   type RunState,
   replay,
+  validateGraph,
 } from "@auto-pi-lot/core";
 import { FileJournalStore, type HostPorts, RunHost, ScriptedGate, ScriptedWorker } from "@auto-pi-lot/host";
 
 import { demoGraphInput } from "./demo.js";
+import { printInvalidGraph, readJsonFile } from "./validate.js";
 
-export const RUN_USAGE = "Usage: auto-pi-lot run [--journal <dir>] [--resume <runId>]";
+export const RUN_USAGE =
+  "Usage: auto-pi-lot run [--journal <dir>] [--resume <runId> | --graph <file>] [--max-concurrent <n>] [--max-attempts <n>]";
 
 /** Where `run` journals by default: the gitignored local runtime directory. */
 export const DEFAULT_JOURNAL_DIR = ".auto-pi-lot/journal";
@@ -27,38 +32,62 @@ const DEMO_POLICY: RunPolicy = { maxConcurrent: 2, maxAttemptsPerNode: 2 };
 export interface RunOptions {
   readonly journalDir: string;
   readonly resume: string | null;
+  readonly graphFile: string | null;
+  readonly policy: RunPolicy;
+}
+
+/** Every flag takes one value; `--max-*` values must be positive integers. */
+const RUN_FLAGS = ["--journal", "--resume", "--graph", "--max-concurrent", "--max-attempts"] as const;
+type RunFlag = (typeof RUN_FLAGS)[number];
+
+function isRunFlag(arg: string | undefined): arg is RunFlag {
+  return RUN_FLAGS.some((flag) => flag === arg);
+}
+
+function positiveInteger(value: string): number | null {
+  const number = /^[1-9][0-9]*$/.test(value) ? Number(value) : Number.NaN;
+  return Number.isSafeInteger(number) ? number : null;
 }
 
 /** Parses `run`'s arguments; never throws, so the entry point can print the usage line. */
 export function parseRunArgs(
   args: readonly string[],
 ): { ok: true; options: RunOptions } | { ok: false; error: string } {
-  let journalDir = DEFAULT_JOURNAL_DIR;
-  let resume: string | null = null;
-  let seenJournal = false;
-  let seenResume = false;
+  const values = new Map<RunFlag, string>();
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     const value = args[index + 1];
-    if (arg !== "--journal" && arg !== "--resume") {
+    if (!isRunFlag(arg)) {
       return { ok: false, error: `Unknown or incomplete argument: ${String(arg)}` };
     }
     // A missing, empty or flag-like value is an incomplete argument.
     if (value === undefined || value === "" || value.startsWith("--")) {
       return { ok: false, error: `Unknown or incomplete argument: ${arg}` };
     }
-    if (arg === "--journal") {
-      if (seenJournal) return { ok: false, error: "--journal given twice" };
-      seenJournal = true;
-      journalDir = value;
-    } else {
-      if (seenResume) return { ok: false, error: "--resume given twice" };
-      seenResume = true;
-      resume = value;
-    }
+    if (values.has(arg)) return { ok: false, error: `${arg} given twice` };
+    values.set(arg, value);
     index += 1;
   }
-  return { ok: true, options: { journalDir, resume } };
+
+  const resume = values.get("--resume") ?? null;
+  const graphFile = values.get("--graph") ?? null;
+  if (resume !== null && graphFile !== null) return { ok: false, error: "--graph cannot be combined with --resume" };
+  // A resumed run keeps the policy its journal recorded; a limit flag would be silently ignored.
+  if (resume !== null && (values.has("--max-concurrent") || values.has("--max-attempts"))) {
+    return { ok: false, error: "--max-concurrent and --max-attempts cannot be combined with --resume" };
+  }
+
+  const maxConcurrent = positiveInteger(values.get("--max-concurrent") ?? String(DEMO_POLICY.maxConcurrent));
+  const maxAttempts = positiveInteger(values.get("--max-attempts") ?? String(DEMO_POLICY.maxAttemptsPerNode));
+  const policy = parseDto(RunPolicySchema, { maxConcurrent, maxAttemptsPerNode: maxAttempts });
+  if (!policy.ok) {
+    const flag = maxConcurrent === null ? "--max-concurrent" : "--max-attempts";
+    return { ok: false, error: `Unknown or incomplete argument: ${flag}` };
+  }
+  return {
+    ok: true,
+    options: { journalDir: values.get("--journal") ?? DEFAULT_JOURNAL_DIR, resume, graphFile, policy: policy.value },
+  };
 }
 
 interface NodeSummary {
@@ -88,6 +117,8 @@ export interface FakeRunOutput {
   readonly runId: string;
   readonly journal: string;
   readonly resumed: boolean;
+  /** The graph file the run was started from, or null for the built-in example. */
+  readonly graphFile: string | null;
   readonly tornTail: boolean;
   readonly finalStatus: "succeeded" | "failed" | "cancelled";
   readonly events: readonly EventSummary[];
@@ -129,18 +160,20 @@ function summarizeEvent(event: JournalEvent, index: number): EventSummary {
   }
 }
 
+/** Built from entries so a node id such as `__proto__` becomes an own key, never a prototype write. */
 function summarizeNodes(state: RunState): Record<string, NodeSummary> {
-  const nodes: Record<string, NodeSummary> = {};
-  for (const [nodeId, node] of Object.entries(state.nodes)) {
-    nodes[nodeId] = {
-      execution: node.execution,
-      disposition: node.disposition,
-      attemptCount: node.attemptCount,
-      invalidatedAttemptCount: node.invalidatedAttemptCount,
-      failureCategory: node.failureCategory,
-    };
-  }
-  return nodes;
+  return Object.fromEntries(
+    Object.entries(state.nodes).map(([nodeId, node]): [string, NodeSummary] => [
+      nodeId,
+      {
+        execution: node.execution,
+        disposition: node.disposition,
+        attemptCount: node.attemptCount,
+        invalidatedAttemptCount: node.invalidatedAttemptCount,
+        failureCategory: node.failureCategory,
+      },
+    ]),
+  );
 }
 
 /** The example graph under a fresh run id, so every `run` journals a new run. */
@@ -149,20 +182,21 @@ function freshDemoGraph(): GraphSpec {
 }
 
 /**
- * A new run crashes `implement`'s first attempt so the journal shows a retry under a new
- * fencing token. A resumed run gets a worker that only succeeds: whatever is still open after
- * the restart should finish.
+ * A new run of the example crashes `implement`'s first attempt so the journal shows a retry
+ * under a new fencing token. A resumed run, or a run of a graph file, gets a worker that only
+ * succeeds: whatever is still open after the restart should finish.
  */
-function ports(journal: FileJournalStore, resumed: boolean): HostPorts {
-  const worker = resumed
-    ? new ScriptedWorker()
-    : new ScriptedWorker({ script: { implement: [{ type: "failed", category: "worker_crashed" }] } });
+function ports(journal: FileJournalStore, scriptedCrash: boolean): HostPorts {
+  const worker = scriptedCrash
+    ? new ScriptedWorker({ script: { implement: [{ type: "failed", category: "worker_crashed" }] } })
+    : new ScriptedWorker();
   return { journal, worker, gate: new ScriptedGate() };
 }
 
 /**
- * Runs the example graph end to end through `RunHost` with the scripted fake worker and gate,
- * journaling to a file, or resumes a run from its journal. Returns the process exit code.
+ * Runs the example graph, or a graph file, end to end through `RunHost` with the scripted fake
+ * worker and gate, journaling to a file, or resumes a run from its journal. Returns the process
+ * exit code.
  */
 export async function runFakeRun(args: readonly string[]): Promise<number> {
   const parsed = parseRunArgs(args);
@@ -175,10 +209,32 @@ export async function runFakeRun(args: readonly string[]): Promise<number> {
   const journal = new FileJournalStore(journalDir);
   const resumed = parsed.options.resume !== null;
 
-  const host =
-    parsed.options.resume === null
-      ? await RunHost.start(ports(journal, false), freshDemoGraph(), DEMO_POLICY)
-      : await RunHost.resume(ports(journal, true), parsed.options.resume);
+  const { graphFile, policy } = parsed.options;
+
+  let host: RunHost;
+  if (parsed.options.resume !== null) {
+    host = await RunHost.resume(ports(journal, false), parsed.options.resume);
+  } else if (graphFile === null) {
+    host = await RunHost.start(ports(journal, true), freshDemoGraph(), policy);
+  } else {
+    const read = await readJsonFile(graphFile);
+    if (!read.ok) {
+      console.error(read.error);
+      console.error(RUN_USAGE);
+      return 2;
+    }
+    const validated = validateGraph(read.value);
+    if (!validated.ok) {
+      printInvalidGraph(graphFile, validated.issues);
+      return 1;
+    }
+    try {
+      host = await RunHost.start(ports(journal, false), validated.graph, policy);
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : String(error));
+      return 1;
+    }
+  }
   const finalStatus = await host.completion;
   const stored = await journal.read(host.runId);
   const replayed = replay(stored.events);
@@ -188,6 +244,7 @@ export async function runFakeRun(args: readonly string[]): Promise<number> {
     runId: host.runId,
     journal: journal.pathFor(host.runId),
     resumed,
+    graphFile,
     tornTail: host.recovery.tornTail,
     finalStatus,
     events: host.events.map(summarizeEvent),

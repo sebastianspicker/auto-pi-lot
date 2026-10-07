@@ -16,6 +16,22 @@ const ASPECTS = [
   ["failed", "✗", "rejected, failed or exhausted"],
   ["cancelled", "⊘", "cancelled"],
 ];
+/** One glyph per attempt status, as the reducer records it in `step.attempts`. */
+const ATTEMPT_ASPECTS = [
+  ["unknown", "", "not yet dispatched"],
+  ["dispatched", "●", "running"],
+  ["stopping", "◌", "asked to stop"],
+  ["result_ready", "◐", "result awaiting acceptance"],
+  ["accepted", "✓", "accepted"],
+  ["rejected", "✗", "rejected or failed"],
+  ["failed", "✗", "rejected or failed"],
+  ["stopped", "⊘", "stopped"],
+  ["superseded", "↷", "superseded by a retry"],
+  ["invalidated", "↺", "result thrown out, waiting again"],
+];
+const ATTEMPT_ASPECT = Object.fromEntries(ATTEMPT_ASPECTS.map(([status, glyph, text]) => [status, { glyph, text }]));
+const SVG_NS = "http://www.w3.org/2000/svg";
+const BOX = { width: 184, height: 46, gapX: 96, gapY: 14, padding: 8 };
 const WAITING = new Set(["waiting_children", "waiting_input", "waiting_approval"]);
 const GLYPH = Object.fromEntries(ASPECTS.map(([aspect, glyph]) => [aspect, glyph]));
 const RUN_GLYPH = { running: "●", cancelling: "◌", succeeded: "✓", failed: "✗", cancelled: "⊘" };
@@ -26,6 +42,16 @@ const byId = (id) => document.getElementById(id);
 
 function html(tag, attributes = {}, ...children) {
   const element = document.createElement(tag);
+  for (const [name, value] of Object.entries(attributes)) {
+    if (value !== undefined && value !== null && value !== false) element.setAttribute(name, String(value));
+  }
+  element.append(...children.flat().filter((child) => child !== undefined && child !== null && child !== false));
+  return element;
+}
+
+/** Like `html`, for SVG elements. */
+function svg(tag, attributes = {}, ...children) {
+  const element = document.createElementNS(SVG_NS, tag);
   for (const [name, value] of Object.entries(attributes)) {
     if (value !== undefined && value !== null && value !== false) element.setAttribute(name, String(value));
   }
@@ -62,18 +88,29 @@ function describeNode(node) {
   return parts.join(", ");
 }
 
-/** attemptId -> { node, label }, numbering each node's attempts in order of first dispatch. */
+/** attemptId -> { node, label, fencingToken, repairOf }, numbering each node's attempts in order of first dispatch. */
 function attemptLabels(scenario) {
   const labels = new Map();
   const counts = new Map();
-  const note = (nodeId, attemptId) => {
+  // A reservation the reducer dropped before `attempt_dispatched` (an invalidated consumer) never
+  // became an attempt: it keeps its node's name but takes no number from the real attempts.
+  const real = new Set(scenario.steps.flatMap((step) => [...Object.keys(step.attempts ?? {}), step.event.attemptId]));
+  const note = (nodeId, attemptId, command = {}) => {
     if (!nodeId || !attemptId || labels.has(attemptId)) return;
-    const count = (counts.get(nodeId) ?? 0) + 1;
-    counts.set(nodeId, count);
-    labels.set(attemptId, { node: nodeId, label: `${nodeId}#${count}` });
+    const dropped = !real.has(attemptId);
+    const count = dropped ? 0 : (counts.get(nodeId) ?? 0) + 1;
+    if (!dropped) counts.set(nodeId, count);
+    labels.set(attemptId, {
+      node: nodeId,
+      label: dropped ? `${nodeId} (dropped reservation)` : `${nodeId}#${count}`,
+      fencingToken: command.fencingToken,
+      repairOf: command.repairOf?.attemptId,
+    });
   };
   for (const step of scenario.steps) {
-    for (const command of step.commands) if (command.type === "dispatch") note(command.nodeId, command.attemptId);
+    for (const command of step.commands) {
+      if (command.type === "dispatch") note(command.nodeId, command.attemptId, command);
+    }
     note(step.event.nodeId, step.event.attemptId);
   }
   return labels;
@@ -204,6 +241,135 @@ function renderFacts(scenario) {
   );
 }
 
+/** Longest-path layers of the (validated, acyclic) graph, left to right; declaration order within a layer. */
+function layoutGraph(graph) {
+  const ids = graph.nodes.map(({ id }) => id);
+  const incoming = new Map(
+    ids.map((id) => [id, graph.edges.filter((edge) => edge.to === id).map((edge) => edge.from)]),
+  );
+  const layerOf = new Map();
+  const pending = new Set(ids);
+  while (pending.size > 0) {
+    // Kahn pass: take, in declaration order, every node whose producers are all placed.
+    const ready = ids.filter((id) => pending.has(id) && incoming.get(id).every((from) => layerOf.has(from)));
+    if (ready.length === 0) break;
+    for (const id of ready) {
+      layerOf.set(id, Math.max(-1, ...incoming.get(id).map((from) => layerOf.get(from))) + 1);
+      pending.delete(id);
+    }
+  }
+  const layers = [];
+  for (const id of ids) {
+    const layer = layerOf.get(id) ?? 0;
+    layers[layer] ??= [];
+    layers[layer].push(id);
+  }
+  return { layers: layers.map((layer) => layer ?? []), layerOf };
+}
+
+function renderGraph(scenario, step, previousStep) {
+  const { graph } = scenario;
+  const { layers } = layoutGraph(graph);
+  const largest = Math.max(1, ...layers.map((layer) => layer.length));
+  const width = layers.length * BOX.width + (layers.length - 1) * BOX.gapX + 2 * BOX.padding;
+  const height = largest * BOX.height + (largest - 1) * BOX.gapY + 2 * BOX.padding;
+  const position = new Map();
+  layers.forEach((layer, column) => {
+    const used = layer.length * BOX.height + (layer.length - 1) * BOX.gapY;
+    layer.forEach((id, row) => {
+      position.set(id, {
+        x: BOX.padding + column * (BOX.width + BOX.gapX),
+        y: BOX.padding + (height - 2 * BOX.padding - used) / 2 + row * (BOX.height + BOX.gapY),
+      });
+    });
+  });
+  const roles = new Map(graph.nodes.map((node) => [node.id, node.role]));
+
+  const edges = graph.edges.map((edge) => {
+    const from = position.get(edge.from);
+    const to = position.get(edge.to);
+    const x1 = from.x + BOX.width;
+    const y1 = from.y + BOX.height / 2;
+    const x2 = to.x;
+    const y2 = to.y + BOX.height / 2;
+    const half = BOX.gapX / 2;
+    const accepted = edge.condition === "accepted";
+    return svg(
+      "g",
+      { class: "edge" },
+      svg("title", {}, `${edge.from} → ${edge.to} (${accepted ? "needs accepted result" : "needs a result"})`),
+      svg("path", {
+        d: `M${x1} ${y1} C${x1 + half} ${y1} ${x2 - half} ${y2} ${x2} ${y2}`,
+        fill: "none",
+        stroke: "currentColor",
+        "stroke-width": 1.25,
+        "stroke-dasharray": accepted ? undefined : "5 4",
+        "marker-end": "url(#graph-arrow)",
+      }),
+    );
+  });
+  // Drawn last so no node box covers them.
+  const bindings = graph.edges.flatMap((edge) => {
+    const consumed = step.attempts?.[step.nodes[edge.to]?.activeAttemptId]?.consumes?.[edge.from];
+    if (consumed === undefined) return [];
+    const from = position.get(edge.from);
+    const to = position.get(edge.to);
+    const x = (from.x + BOX.width + to.x) / 2;
+    const y = (from.y + to.y + BOX.height) / 2 - 6;
+    return [svg("text", { class: "binding", x, y, "text-anchor": "middle" }, `on ${label(consumed)}`)];
+  });
+
+  const nodes = graph.nodes.map(({ id }) => {
+    const node = step.nodes[id];
+    const before = previousStep?.nodes[id];
+    const unchanged = before !== undefined && JSON.stringify(before) === JSON.stringify(node);
+    const { x, y } = position.get(id);
+    const attempt = node.activeAttemptId ? label(node.activeAttemptId) : null;
+    return svg(
+      "g",
+      { class: unchanged ? "node unchanged" : "node" },
+      svg("title", {}, `${id}: ${describeNode(node)}`),
+      svg("rect", { x, y, width: BOX.width, height: BOX.height, rx: 4, stroke: "currentColor", fill: "var(--bg)" }),
+      svg("text", { class: "name", x: x + 10, y: y + 19 }, `${GLYPH[aspectOf(node)]} ${id}`),
+      svg(
+        "text",
+        { class: "role", x: x + 10, y: y + 35 },
+        attempt === null ? roles.get(id) : `${roles.get(id)} · ${attempt}`,
+      ),
+    );
+  });
+
+  const summary = `Task graph: ${graph.nodes.length} ${graph.nodes.length === 1 ? "task" : "tasks"}, ${graph.edges.length} ${
+    graph.edges.length === 1 ? "dependency" : "dependencies"
+  }; edges are listed above`;
+  const frame = byId("graph");
+  frame.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  frame.setAttribute("width", String(width));
+  frame.setAttribute("height", String(height));
+  frame.setAttribute("aria-label", summary);
+  frame.replaceChildren(
+    svg("title", {}, summary),
+    svg(
+      "defs",
+      {},
+      svg(
+        "marker",
+        { id: "graph-arrow", viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: "auto" },
+        svg("path", { d: "M0 0 L10 5 L0 10 z", fill: "currentColor" }),
+      ),
+    ),
+    ...edges,
+    ...nodes,
+    ...bindings,
+  );
+  const entry = (glyph, text) => html("span", {}, html("span", { class: "glyph", "aria-hidden": "true" }, glyph), text);
+  byId("graph-legend").replaceChildren(
+    entry("──", "needs accepted result"),
+    entry("╌╌", "needs a result"),
+    html("span", {}, "faint: unchanged since the previous event"),
+  );
+}
+
 function renderMatrix(scenario) {
   const steps = scenario.steps;
   const columnClass = (index, extra) =>
@@ -225,16 +391,23 @@ function renderMatrix(scenario) {
     ),
   );
 
-  const row = (name, rowClass, cell) =>
+  const row = (name, rowClass, cell, rowTitle) =>
     html(
       "tr",
       { class: rowClass },
-      html("th", { scope: "row" }, name),
+      html("th", { scope: "row", title: rowTitle }, name),
       steps.map((step, index) => {
-        const { glyph, text, unchanged } = cell(step, index);
+        const { glyph, text, unchanged, subject, title } = cell(step, index);
         return html(
           "td",
-          { class: columnClass(index, unchanged ? "unchanged" : ""), title: text, "data-step": index },
+          {
+            class: columnClass(
+              index,
+              [unchanged ? "unchanged" : "", subject ? "subject" : ""].filter(Boolean).join(" "),
+            ),
+            title: title ?? text,
+            "data-step": index,
+          },
           html("span", { "aria-hidden": "true" }, glyph),
           hidden(text),
         );
@@ -254,21 +427,72 @@ function renderMatrix(scenario) {
   );
   const runRow = row("run", "run", (step, index) => ({
     glyph: RUN_GLYPH[step.run.status] ?? "?",
-    text: `run ${step.run.status}, ${step.run.permitsInUse} permits in use`,
+    text: `run ${step.run.status}`,
     unchanged: index > 0 && JSON.stringify(steps[index - 1].run) === JSON.stringify(step.run),
   }));
+  const permitsRow = row("permits", "run", (step, index) => ({
+    glyph: String(step.run.permitsInUse),
+    text: `${step.run.permitsInUse} permits in use`,
+    title: `${step.run.permitsInUse} permits in use, ≤${scenario.policy.maxConcurrent}`,
+    unchanged: index > 0 && steps[index - 1].run.permitsInUse === step.run.permitsInUse,
+  }));
+
+  const attemptIds = [...view.labels.keys()].filter((id) => steps.some((step) => step.attempts?.[id] !== undefined));
+  const attemptRows = attemptIds.map((id) => {
+    const known = view.labels.get(id);
+    const consumed = Object.values(steps.map((step) => step.attempts?.[id]).find(Boolean)?.consumes ?? {});
+    const rowTitle = [
+      `token ${known.fencingToken}`,
+      consumed.length > 0 ? `on ${consumed.map(label).join(", ")}` : null,
+      known.repairOf ? `repairs ${label(known.repairOf)}` : null,
+    ]
+      .filter(Boolean)
+      .join(", ");
+    return row(
+      known.label,
+      "attempt",
+      (step, index) => {
+        const attempt = step.attempts?.[id];
+        const before = index > 0 ? steps[index - 1].attempts?.[id] : undefined;
+        const { glyph, text } = ATTEMPT_ASPECT[attempt === undefined ? "unknown" : attempt.status] ?? {
+          glyph: "?",
+          text: attempt.status,
+        };
+        return {
+          glyph,
+          text: `${known.label}: ${text}${attempt?.invalidated && attempt.status !== "invalidated" ? ", invalidated" : ""}`,
+          unchanged: before !== undefined && JSON.stringify(before) === JSON.stringify(attempt),
+          subject: step.event.attemptId === id,
+        };
+      },
+      rowTitle,
+    );
+  });
   const reducerRow = row("reducer", "reducer", (step) =>
     step.outcome === "rejected"
       ? { glyph: "✗", text: `rejected: ${step.rejection?.code ?? "unknown"}`, unchanged: false }
       : { glyph: "ok", text: "applied", unchanged: true },
   );
-  byId("matrix").replaceChildren(html("thead", {}, head), html("tbody", {}, nodeRows, runRow, reducerRow));
+  byId("matrix").replaceChildren(
+    html("thead", {}, head),
+    html("tbody", {}, nodeRows, runRow, permitsRow),
+    attemptRows.length > 0 ? html("tbody", { class: "attempts" }, attemptRows) : null,
+    html("tbody", {}, reducerRow),
+  );
 
   const used = new Set(scenario.graph.nodes.flatMap(({ id }) => steps.map((step) => aspectOf(step.nodes[id]))));
+  const usedStatuses = new Set(attemptIds.flatMap((id) => steps.map((step) => step.attempts?.[id]?.status)));
+  const entries = ASPECTS.filter(([aspect]) => used.has(aspect)).map(([, glyph, text]) => [glyph, text]);
+  for (const [status, glyph, text] of ATTEMPT_ASPECTS) {
+    if (glyph !== "" && usedStatuses.has(status) && !entries.some(([, known]) => known === text)) {
+      entries.push([glyph, text]);
+    }
+  }
   byId("legend").replaceChildren(
-    ...ASPECTS.filter(([aspect]) => used.has(aspect)).map(([, glyph, text]) =>
+    ...entries.map(([glyph, text]) =>
       html("span", {}, html("span", { class: "glyph", "aria-hidden": "true" }, glyph), text),
     ),
+    ...(attemptRows.length > 0 ? [html("span", {}, "underlined cell: the attempt this event is about")] : []),
     html("span", {}, "faint: unchanged since the previous event"),
     html("span", {}, "shaded column: rejected event, nothing changed"),
   );
@@ -380,6 +604,7 @@ function render({ reveal = false } = {}) {
   byId("scenario-title").textContent = scenario.title;
   byId("scenario-summary").textContent = scenario.summary;
   renderFacts(scenario);
+  renderGraph(scenario, step, view.step > 0 ? scenario.steps[view.step - 1] : undefined);
   renderMatrix(scenario);
   renderLog(scenario);
   renderProvenance(scenario);

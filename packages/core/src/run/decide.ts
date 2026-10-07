@@ -168,7 +168,8 @@ function retryOrFailDependency(state: RunState, nodeId: string, retried: NodeRun
  * Invalidates the current work of every node that consumed `attemptId` of `producerId`, and,
  * transitively, the work built on an invalidated result (decision 0005): a held reservation is
  * dropped, an in-flight attempt is asked to stop, and a proposed or accepted result returns its
- * node to `pending` with disposition `invalidated`. Pending and settled nodes are left alone.
+ * node to `pending` with disposition `invalidated`. During cancellation, affected nodes settle
+ * as `cancelled` instead (decision 0009). Pending and settled nodes are left alone.
  */
 function invalidateConsumers(
   state: RunState,
@@ -192,7 +193,7 @@ function invalidateConsumers(
           ...current.nodes,
           [edge.to]: {
             ...consumer,
-            execution: "pending" as const,
+            execution: current.status === "cancelling" ? ("cancelled" as const) : ("pending" as const),
             reservedAttemptId: null,
             reservedFencingToken: null,
             reservedConsumes: null,
@@ -227,7 +228,7 @@ function invalidateConsumers(
           ...current.nodes,
           [edge.to]: {
             ...consumer,
-            execution: "pending" as const,
+            execution: current.status === "cancelling" ? ("cancelled" as const) : ("pending" as const),
             disposition: "invalidated" as const,
             activeAttemptId: null,
             acceptanceRequested: false,
@@ -414,7 +415,7 @@ function handleAcceptanceDecided(state: RunState, event: AcceptanceDecidedEvent)
 
   // Rejected while cancelling: the run is winding down, so this attempt's outcome settles
   // the node directly instead of retrying — a retry would need a new permit and dispatch,
-  // both forbidden once cancellation has started.
+  // both forbidden once cancellation has started. Consumers still lose trust in this result.
   if (state.status === "cancelling") {
     const attempts = { ...state.attempts, [event.attemptId]: { ...attempt, status: "rejected" as const } };
     const nodes = {
@@ -426,7 +427,8 @@ function handleAcceptanceDecided(state: RunState, event: AcceptanceDecidedEvent)
         acceptanceRequested: false,
       },
     };
-    return accept({ ...state, nodes, attempts });
+    const invalidated = invalidateConsumers({ ...state, nodes, attempts }, event.nodeId, event.attemptId);
+    return accept(invalidated.state, invalidated.commands);
   }
 
   // Rejected. Every node that consumed this attempt is invalidated, transitively (decision
@@ -704,11 +706,14 @@ function runDispatchLoop(state: RunState): { state: RunState; commands: Command[
 
     const nodeState = nodes[next.id] as NodeRunState;
     // Bind the attempt to every producer's current attempt; a ready node's producers all have one.
-    const consumes: Record<string, string> = {};
+    // Built from entries, never by indexed assignment: a node id such as `__proto__` must become
+    // an own key of the record, not a prototype write that silently drops the binding.
+    const bindings: [string, string][] = [];
     for (const producerId of producersOf(state, next.id)) {
       const producerAttemptId = ownValue(nodes, producerId)?.activeAttemptId;
-      if (producerAttemptId !== undefined && producerAttemptId !== null) consumes[producerId] = producerAttemptId;
+      if (producerAttemptId !== undefined && producerAttemptId !== null) bindings.push([producerId, producerAttemptId]);
     }
+    const consumes: Record<string, string> = Object.fromEntries(bindings);
     // A dropped reservation does not advance `attemptCount`, so the fencing token keeps the
     // attempt id unique per reservation.
     const attemptNumber = nodeState.attemptCount + 1;

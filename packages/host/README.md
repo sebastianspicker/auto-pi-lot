@@ -23,7 +23,10 @@ Every event (a run start, a worker outcome, a gate verdict, a cancel request, th
 
 The host checks what comes in over its ports. A worker outcome that does not match
 `WorkerOutcomeSchema` is a protocol violation by that worker: the attempt fails with category
-`schema_invalid` and the issues are kept in `host.protocolViolations`. A `cancel` with an
+`schema_invalid` and the issues are kept in `host.protocolViolations`. A `stopped` outcome for
+an attempt the host never asked to stop is a worker that quit on its own; because a worker
+reports only once, the host journals it as `attempt_failed` with category `worker_crashed`
+rather than leaving the attempt (and its permit) hanging until a resume. A `cancel` with an
 invalid reason returns `{ applied: false, reason: "invalid" }` and changes nothing. A gate
 verdict that does not match `AcceptanceVerdictSchema` is a host bug (`GateProtocolError`).
 
