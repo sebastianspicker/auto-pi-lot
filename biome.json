@@ -152,6 +152,41 @@
           }
         }
       }
+    },
+    {
+      "includes": ["packages/worker/src/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": [
+                      "**",
+                      "!@auto-pi-lot/core",
+                      "!node:child_process",
+                      "!node:crypto",
+                      "!node:fs",
+                      "!node:fs/promises",
+                      "!node:os",
+                      "!node:path",
+                      "!./**",
+                      "!../**"
+                    ],
+                    "message": "worker runs attempts over the core ports and a fixed set of Node built-ins (child_process, crypto, fs, os, path): no provider SDK, no other workspace package."
+                  },
+                  {
+                    "group": ["**/src/**", "**/dist/**"],
+                    "message": "Import another workspace through its package name, never by a relative path into its src or dist."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
     }
   ]
 }

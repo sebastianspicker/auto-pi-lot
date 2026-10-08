@@ -10,6 +10,8 @@ import {
   parseJournalEvent,
 } from "@auto-pi-lot/core";
 
+import { encodeRunId } from "../paths.js";
+
 /** Longest record line (without its newline) the store writes or reads, in bytes. */
 export const MAX_RECORD_BYTES = 1_048_576;
 
@@ -56,16 +58,6 @@ const decoder = new TextDecoder("utf-8", { fatal: true });
 
 /** `O_NOFOLLOW` does not exist on Windows. */
 const NOFOLLOW = constants.O_NOFOLLOW ?? 0;
-
-/** Keeps `[a-z0-9]`, `-`, `_` and `.`; percent-encodes every other UTF-8 byte (lowercase hex). */
-function encodeRunId(runId: string): string {
-  let encoded = "";
-  for (const byte of new TextEncoder().encode(runId)) {
-    const char = String.fromCharCode(byte);
-    encoded += /[a-z0-9_.-]/.test(char) ? char : `%${byte.toString(16).padStart(2, "0")}`;
-  }
-  return encoded;
-}
 
 /** Opens `path` without following a symlink and refuses anything that is not a regular file. */
 async function openRegular(path: string, flags: number, mode?: number): Promise<FileHandle> {

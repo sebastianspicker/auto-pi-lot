@@ -18,8 +18,20 @@ const journalEventBase = {
 export const RunPolicySchema = z.strictObject({
   maxConcurrent: positiveInteger,
   maxAttemptsPerNode: positiveInteger,
+  /**
+   * How many writer-role attempts (`isWriterRole`) may hold a permit at once. A host whose
+   * workers share one workspace passes 1, so no writer starts until the current one has reported
+   * (decision 0011). Omitted: writers are bounded by `maxConcurrent` alone. Optional on the wire
+   * so earlier journals keep their digests.
+   */
+  maxConcurrentWriters: positiveInteger.optional(),
 });
 export type RunPolicy = z.infer<typeof RunPolicySchema>;
+
+/** The writer slots a policy grants: `maxConcurrentWriters`, or every permit when it is omitted. */
+export function writerSlotsOf(policy: RunPolicy): number {
+  return policy.maxConcurrentWriters ?? policy.maxConcurrent;
+}
 
 /** The host admitted a run: the graph it will execute and the policy bounding it. */
 export const RunStartedEventSchema = z.strictObject({

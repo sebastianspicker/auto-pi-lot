@@ -2,7 +2,8 @@
 
 The deterministic, provider-neutral domain: wire schemas and canonical identity, graph spec
 and validation, run state vocabulary, journal events, the pure run reducer and replay,
-evidence records, and the session port. Imports only `zod` and `node:crypto` — no workspace
+evidence records, check profiles and project configuration, the worker report formats, and
+the session port. Imports only `zod` and `node:crypto` — no workspace
 dependency, no provider SDK, no I/O. See [docs/architecture.md](../../docs/architecture.md)
 for how this package fits the rest of the workspace and how that boundary is enforced.
 
@@ -16,18 +17,20 @@ alone; `packages/pi` may use only the latter.
 | --- | --- |
 | `wire.ts` | `SCHEMA_VERSION`/`SchemaVersionSchema`, `IdSchema`/`Id`, `IssueCode`, `ValidationIssue`, `parseDto` |
 | `canonical.ts` | `canonicalJson`/`digest`: one canonical JSON encoding and its SHA-256 identity |
-| `graph/spec.ts` | `Role`, `NodeLimits`, `NodeSpec`, `DependencyCondition`, `EdgeSpec`, `GraphSpec` |
+| `graph/spec.ts` | `Role`, `isWriterRole`, `isCheckerRole`, `NodeLimits`, `NodeSpec` (with `checks` and `instructions`), `DependencyCondition`, `EdgeSpec`, `GraphSpec` |
 | `graph/lint.ts` | `GraphWarning`, `lintGraph` |
 | `graph/validate.ts` | `ValidatedGraph`, `validateGraph`, `topologicalOrder`, `parseGraphSpec` |
 | `run/status.ts` | `ExecutionState`, `ResultDisposition`, `FailureCategory`, `NodeStatus`, `isDependencySatisfied` |
-| `run/evidence.ts` | `ResultProposal`, `CheckReceipt`, `ReviewReceipt`, `AcceptanceRecord` |
-| `run/events.ts` | `JournalEvent` discriminated union, `RunPolicy`, `parseJournalEvent` |
+| `run/evidence.ts` | `ResultProposal`, `CheckReceipt`, `ReviewReceipt`, `AcceptanceRecord`, the `EvidenceRecord` union by `kind`, `identifyEvidence` |
+| `run/checks.ts` | `CheckProfile`, `ProjectConfig` (the `auto-pi-lot.json` file), `ModelRoute`, `validateGraphChecks` |
+| `run/report.ts` | `WorkReport`, `ReviewReport` (what a worker's final message must contain), `extractJsonBlock` |
+| `run/events.ts` | `JournalEvent` discriminated union, `RunPolicy` (with `maxConcurrentWriters`, `writerSlotsOf`), `parseJournalEvent` |
 | `run/state.ts` | `RunState`, `NodeRunState`, `AttemptState`, `initialState`, `freshNodeState`, `isTerminalStatus` |
 | `run/commands.ts` | `Command` (`dispatch`, `evaluate_acceptance`, `cancel_attempt`, `complete_run`) |
 | `run/readiness.ts` | `getReadyNodes` |
 | `run/decide.ts` | `decide`: the pure run reducer |
 | `run/replay.ts` | `replay` |
-| `run/ports.ts` | `JournalStore`, `WorkerPort`, `AcceptanceGate` and their request and outcome types: the interfaces the host needs, implemented outside `core` |
+| `run/ports.ts` | `JournalStore`, `WorkerPort`, `AcceptanceGate`, `EvidenceStore`, `ArtifactStore` and their request and outcome types: the interfaces the host needs, implemented outside `core` |
 | `session.ts` | `SessionEvent`, `CodingSession` (also the `./session` subpath) |
 
 ## Wire identity
@@ -60,15 +63,34 @@ set of nodes ready to dispatch; it does not dispatch work or allocate permits it
 ## Proposal versus acceptance record
 
 `ResultProposal` is a worker's own claim: summary, output artifact IDs, claims, limitations,
-requested checks, and an input fingerprint. It has no `status`/`accepted` field, so a worker
+requested checks, an input fingerprint, and the workspace fingerprints before and after the
+attempt (`baseRevision`, `resultRevision`). It has no `status`/`accepted` field, so a worker
 cannot self-accept its own output. `CheckReceipt` records one deterministic check execution
 (profile/version, executable/args identity, environment/input/source digests, exit code,
-outcome, optional test counts). `ReviewReceipt` records independent criterion verdicts,
-distinguishable from a measured check. Only `AcceptanceRecord` is the host's own decision: it
-cites the candidate's proposal digest and input fingerprint, requires at least one check or
-review receipt ID when `decision === "accepted"`, and carries the deciding policy revision
-and an optional invalidation. These are the records that a journal `result_proposed` event's
-`proposalDigest` and an `acceptance_decided` event's `receiptIds` refer to.
+outcome, optional test counts, the attempt it ran for). `ReviewReceipt` records independent
+criterion verdicts about one candidate attempt and proposal digest, distinguishable from a
+measured check. Only `AcceptanceRecord` is the host's own decision: it cites the candidate's
+proposal digest and input fingerprint, requires at least one check or review receipt ID when
+`decision === "accepted"`, and carries the deciding policy revision, the gate's `reasons` and
+an optional invalidation. Every record carries a `kind`; together they form
+`EvidenceRecordSchema`, and `identifyEvidence` gives a record its `id`, the digest of its
+content without the id, so a record cannot change without changing its identity. These are the
+records that a journal `result_proposed` event's `proposalDigest` (the proposal's id) and an
+`acceptance_decided` event's `receiptIds` refer to (decision 0010).
+
+## Check profiles, configuration and reports
+
+`run/checks.ts` holds what an operator configures: a `CheckProfile` is one executable with an
+argument list (never a shell string), an optional directory inside the workspace and a timeout;
+`ProjectConfig` is the strict shape of the `auto-pi-lot.json` file (profiles, an optional pinned
+`ModelRoute`, a thinking level and default `RunPolicy`); `validateGraphChecks` reports a node
+whose `checks` name no configured profile (`unknown_check_profile`) and duplicate profile ids.
+
+`run/report.ts` holds what a worker's final message must contain: `WorkReportSchema`
+(`summary`, `claims`, `limitations`) for producing roles and `ReviewReportSchema` (one
+`verdict` per acceptance criterion with its `evidence`, plus `limitations`) for checking roles,
+and `extractJsonBlock`, which takes the last fenced ```` ```json ```` block of a message. Both
+are bounded and neither can carry an acceptance.
 
 ## Validation
 
@@ -100,8 +122,12 @@ and are not checked by this package alone.
 graph invalid. It is pure, never throws and reports in node order. `isolated_node`: a node in a
 graph of several nodes has no incoming and no outgoing edge. `checker_without_input`: a
 `verifier`, `falsifier` or `reviewer` has no incoming edge, so it has no producer to check.
-`unverified_producer`: an `implementer` or `integrator` has no outgoing `result_ready` edge, so
-its result is accepted on the gate's receipts alone. `validate` in the CLI prints these warnings.
+`unverified_producer`: a non-checker node declares no `checks` and has no outgoing
+`result_ready` edge, so the evidence gate has nothing to accept its result on.
+`checker_with_checks`: a checker declares checks, which belong on the producer it checks.
+`checker_with_many_candidates`: a checker verifies more than one producer; the session worker
+reviews one candidate per checker. `validate` in the CLI prints these warnings, and `run` with
+real workers refuses a graph that has any unless told otherwise.
 
 ## The run reducer
 
@@ -109,7 +135,10 @@ its result is accepted on the gate's receipts alone. `validate` in the CLI print
 state machine for one flat graph, driven by the versioned journal events in `run/events.ts`.
 It never throws; stale, duplicate, or out-of-order events return a typed `rejection` and
 leave `state` unchanged. It covers dispatch reservations under a concurrency limit (`RunPolicy`
-on `run_started`), bounded retries per node, `result_ready` versus `accepted` dependency
+on `run_started`) and, when the policy sets `maxConcurrentWriters`, a separate bound on how many
+writer-role nodes (`implementer`, `integrator`) hold a permit at once, so a host whose workers
+share one workspace can serialise writers while readers keep flowing (decision 0011); bounded
+retries per node, `result_ready` versus `accepted` dependency
 edges, fencing tokens, host acceptance decisions, and cancellation. `decide` emits
 reducer-internal `Command`s (`run/commands.ts`: `dispatch`, `evaluate_acceptance`,
 `cancel_attempt`, `complete_run`) for the host to turn into effects and report back as new
@@ -163,7 +192,7 @@ the host stamps, never model output).
 
 | Event | Carries | Meaning |
 | --- | --- | --- |
-| `run_started` | `graph`, `policy` (`RunPolicy`: `maxConcurrent`, `maxAttemptsPerNode`) | The host admitted a run for this graph under this policy |
+| `run_started` | `graph`, `policy` (`RunPolicy`: `maxConcurrent`, `maxAttemptsPerNode`, optional `maxConcurrentWriters`) | The host admitted a run for this graph under this policy |
 | `attempt_dispatched` | `nodeId`, `attemptId`, `fencingToken` | The persisted dispatch intent, recorded before the worker launch effect runs |
 | `result_proposed` | `attemptId`, `fencingToken`, `proposalDigest` | A worker's own claim about its output; cannot self-accept |
 | `acceptance_decided` | `nodeId`, `attemptId`, `decision`, `receiptIds` | The host's own acceptance gate outcome (an input to the reducer, not something it computes) |
@@ -181,7 +210,10 @@ documented on `run/commands.ts`. See decision 0001.
 ## Session events
 
 `session.ts` defines `SessionEventSchema`, a Zod discriminated union on `type`: `usage`,
-`tool_call`, `tool_result`, `settled`, and `error`. A `usage` event carries a nested
+`assistant_message`, `tool_call`, `tool_result`, `settled`, and `error`. An
+`assistant_message` carries the text of one completed assistant message, bounded to
+`MAX_ASSISTANT_TEXT_LENGTH` and flagged `truncated` when cut; the worker reads its report from
+the last one. A `usage` event carries a nested
 `qualification` of `"reported"` (with `inputTokens`/`outputTokens`, and optional
 `cacheReadTokens`/`cacheWriteTokens`) or `"unknown"`; per the budget state machine in the
 design document, unknown usage is never reported as zero. Every `usage` event also

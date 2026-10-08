@@ -1,12 +1,9 @@
 {
-  "name": "@auto-pi-lot/cli",
+  "name": "@auto-pi-lot/worker",
   "version": "0.0.0",
   "license": "MIT",
   "private": true,
   "type": "module",
-  "bin": {
-    "auto-pi-lot": "./dist/index.js"
-  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -17,9 +14,6 @@
     "dist"
   ],
   "dependencies": {
-    "@auto-pi-lot/core": "0.0.0",
-    "@auto-pi-lot/host": "0.0.0",
-    "@auto-pi-lot/pi": "0.0.0",
-    "@auto-pi-lot/worker": "0.0.0"
+    "@auto-pi-lot/core": "0.0.0"
   }
 }

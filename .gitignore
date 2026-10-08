@@ -28,6 +28,7 @@ site/trace.json.tmp
 /packages/core/test/
 /packages/host/test/
 /packages/pi/test/
+/packages/worker/test/
 /scripts/test/
 /scripts/check-ledger.ts
 /scripts/stop-hook.sh

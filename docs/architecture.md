@@ -1,13 +1,14 @@
 # Architecture
 
-**In short.** Today auto-pi-lot is four small packages: three that make decisions (they
-check plans, decide what should happen next in a run, and connect to Pi sessions) and one,
-the *host*, that drives those decisions against pluggable *ports* for the event log, the
-workers and the acceptance gate. With the fake worker that ships with it, a plan runs end to
-end and survives a restart. Nothing starts a worker process or calls a model yet. The code
-is split so that the decision-making part (`core`) can never reach into the Pi-specific part
-or into any effect, and the linter checks this on every change. [Architecture: What runs
-today, Packages]
+**In short.** Today auto-pi-lot is five small packages: `core` makes the decisions (it checks
+plans and decides what should happen next in a run), `host` drives those decisions against
+pluggable *ports* (the event log, the workers, the evidence store and the acceptance gate) and
+judges results from recorded evidence, `worker` runs one attempt at a time through a coding
+session in your repository and runs your checks, `pi` connects to Pi sessions, and `cli` wires
+it all together. A plan runs end to end with real Pi sessions (`run --worker pi`) or with the
+fake worker, is journaled and survives a restart. The code is split so that the decision-making
+part (`core`) can never reach into the Pi-specific part or into any effect, and the linter
+checks this on every change. [Architecture: What runs today, Packages]
 
 *About this page.* It is a plain-language edition of the architecture page for engineers and
 engineering leads who want to understand what the code does today and how it is organised,
@@ -58,44 +59,66 @@ For the finished product see the [design document](design.md); for progress see 
   model provider. `openPiSession` implements it on top of the pinned version of the Pi
   software development kit (SDK) and translates Pi's events into neutral ones.
   [Architecture: What runs today]
-- **Pi extension.** The `/graph` command reports the development status. It starts nothing.
-- **Command-line tool.** `demo` prints a checked example plan, the order its tasks could run
-  in, and which tasks are ready to start. `trace` runs four scripted scenarios through the
-  real reducer and prints every step as JSON; the
-  [trace viewer](https://sebastianspicker.github.io/auto-pi-lot/) (`site/`) replays that
-  output. `validate` checks a plan file and lists its issues, warnings, task order and ready
-  tasks. `run` executes the example plan, or a plan file, through the host with the fake worker
-  and gate, writing the journal to a directory so the run can be inspected and resumed. [Architecture:
+- **Evidence and the evidence gate.** `host` also stores evidence records (proposals, check
+  receipts, review receipts, acceptance records) and artifacts (check logs) in content-addressed
+  stores, and `EvidenceGate` answers the reducer's acceptance requests from those records
+  alone: required checks must have passed against the exact tree the proposal names, no review
+  of the candidate may have failed, and a checker's own attempt is accepted when its review is
+  not unclear (decision 0010).
+- **The session worker.** `SessionWorker` (`packages/worker`) runs one attempt: it builds a
+  task packet from the node, the results it consumes and any rejection it repairs, opens a
+  closed coding session with the tools its role allows, enforces the node's tool-call and token
+  limits, reads the model's final report, fingerprints the workspace, runs the node's declared
+  checks itself (no shell, environment allowlist, timeout) and stores the evidence. The run's
+  writers are serialised by the reducer's writer slots (decision 0011). It is in-process, not a
+  sandbox (decision 0012).
+- **Pi session opener.** `createPiSessionOpener` (`packages/pi`) pins the model route and opens
+  a closed Pi session per attempt: in-memory transcript, no extensions or skills, the worker's
+  tool allowlist and system prompt, SDK retries off.
+- **Pi extension.** The `/graph` command reports how to run graph mode from the command line.
+  It starts nothing inside Pi yet.
+- **Command-line tool.** `init` writes a starter `auto-pi-lot.json` (check profiles discovered
+  from `package.json` scripts, as data) and an example plan for the repository. `validate`
+  checks a plan file and lists its issues, warnings, task order and ready tasks. `run` executes
+  a plan through the host: with `--worker pi` on your repository with real sessions and your
+  checks, otherwise with the fake worker and gate. `inspect` shows a run's state and evidence,
+  `status` lists runs, `artifact` prints a stored log. `demo` prints the example plan and
+  `trace` runs four scripted scenarios through the real reducer for the
+  [trace viewer](https://sebastianspicker.github.io/auto-pi-lot/) (`site/`). [Architecture:
   What runs today]
 
-Nothing here launches a worker process or calls a model. The only actions on the outside
-world are the host's journal writes; everything else exists as the reducer's *commands*
-(instructions for the host), as the ports the host is given, and as the Pi session factory
-that is passed in from outside. [Architecture: What runs today]
+The actions on the outside world are the host's journal, evidence and artifact writes, the
+worker's check processes, and the model calls made through the Pi session the `cli` composes.
+Everything else exists as the reducer's *commands* (instructions for the host) and as the
+ports the host is given. [Architecture: What runs today]
 
 ## Packages
 
 | Package | Responsible for | May use |
 | --- | --- | --- |
 | [`@auto-pi-lot/core`](../packages/core/README.md) | The deterministic, provider-neutral core: data formats on the wire and their canonical identities, the plan format and its checking, the vocabulary of run states, journal events, the reducer and replay, evidence records, and the session interface | `zod` (a schema library) and `node:crypto` |
-| [`@auto-pi-lot/host`](../packages/host/README.md) | The host loop (`RunHost`), the in-memory and file journal stores, and the scripted fake worker and gate | `@auto-pi-lot/core` and Node's file system |
-| [`@auto-pi-lot/pi`](../packages/pi/README.md) | Everything tied to the Pi SDK: the session adapter and the Pi extension entry point | Only the session part of core (`@auto-pi-lot/core/session`), and the Pi SDK |
-| [`@auto-pi-lot/cli`](../packages/cli/README.md) | The operator's entry point (`demo`, `trace`, `validate`, `run`) and the place where the parts are wired together | `@auto-pi-lot/core`, `@auto-pi-lot/host` |
+| [`@auto-pi-lot/host`](../packages/host/README.md) | The host loop (`RunHost`), the journal, evidence and artifact stores, the evidence gate, and the scripted fake worker and gate | `@auto-pi-lot/core` and Node's file system |
+| [`@auto-pi-lot/worker`](../packages/worker/README.md) | The session worker, the check runner, the workspace fingerprint and the task packet | `@auto-pi-lot/core` and Node's file system and child processes |
+| [`@auto-pi-lot/pi`](../packages/pi/README.md) | Everything tied to the Pi SDK: the session adapter, the session opener and the Pi extension entry point | Only the session part of core (`@auto-pi-lot/core/session`), and the Pi SDK |
+| [`@auto-pi-lot/cli`](../packages/cli/README.md) | The operator's entry point (`init`, `validate`, `run`, `inspect`, `status`, `artifact`, `demo`, `trace`) and the place where the parts are wired together | `@auto-pi-lot/core`, `@auto-pi-lot/host`, `@auto-pi-lot/worker`, `@auto-pi-lot/pi` |
 
 ```text
           @auto-pi-lot/core ──────────────────────────┐
           │  (index: full domain, incl. ports)        │ ./session subpath (session port only)
-          ▼                                           ▼
-   @auto-pi-lot/host                          @auto-pi-lot/pi ──► @earendil-works/pi-coding-agent
-          │
-          ▼
-   @auto-pi-lot/cli
+          ├──────────────────┐                        ▼
+          ▼                  ▼                 @auto-pi-lot/pi ──► @earendil-works/pi-coding-agent
+   @auto-pi-lot/host   @auto-pi-lot/worker            │
+          │                  │                        │
+          └──────────────────┴────────────────────────┘
+                             ▼
+                      @auto-pi-lot/cli
 ```
 
 All dependencies point toward `core`, and `core` depends on no other package in the
-repository. No package uses `cli`. Because `pi` can only see the session interface, code tied
-to the Pi SDK cannot reach into run decisions, and because `core` cannot import `host`, the
-reducer cannot reach the file system. [Architecture: Packages]
+repository. No package uses `cli`, and `host`, `worker` and `pi` do not use each other: the
+worker is handed a session opener and stores, it never imports them. Because `pi` can only see
+the session interface, code tied to the Pi SDK cannot reach into run decisions, and because
+`core` cannot import `host`, the reducer cannot reach the file system. [Architecture: Packages]
 
 ### How the rules are enforced
 
@@ -107,6 +130,7 @@ violation fails the build rather than depending on review. [Architecture: Enforc
 | A package may only use libraries declared in its own `package.json`. Only `pi` declares the Pi SDK, and no package declares `cli`. | Biome `noUndeclaredDependencies` |
 | Code in `core/src` may only use `zod`, `node:crypto` and its own files. | Biome `noRestrictedImports`, set for `packages/core/src` |
 | Code in `host/src` may only use `@auto-pi-lot/core`, the Node built-ins `crypto`, `fs` and `path`, and its own files. | Biome `noRestrictedImports`, set for `packages/host/src` |
+| Code in `worker/src` may only use `@auto-pi-lot/core`, the Node built-ins `child_process`, `crypto`, `fs`, `os` and `path`, and its own files. | Biome `noRestrictedImports`, set for `packages/worker/src` |
 | `pi` uses `@auto-pi-lot/core/session`, never the whole of `@auto-pi-lot/core`. | Biome `noRestrictedImports`, set for `packages/pi` |
 | No circular imports, including type-only ones and ones across packages. | Biome `noImportCycles` (`ignoreTypes: false`) |
 | No file may reach directly into another package's `src` or `dist` folder. TypeScript's project references would otherwise quietly allow this. | Biome `noRestrictedImports`, set for `packages/*/src` and repeated in the `core` and `pi` settings, because a package-specific setting replaces the general one |
@@ -158,13 +182,15 @@ numbers are kept separate: a *graph revision* is the history of a plan's content
   repair loops. They extend the one existing reducer; there must not be a second state
   machine.
 - **Actions on the outside world** (*effects*), such as SQLite storage, worker processes,
-  workspaces, the command broker and the supervisor, go into packages that depend on `core`:
-  `host` for the loop and the journal, new packages for the rest. Each such package is
-  created together with its first real implementation, not in advance.
+  worktrees, the command broker and the supervisor, go into packages that depend on `core`:
+  `host` for the loop, the journal and the evidence, `worker` for running attempts and checks,
+  new packages for the rest. Each such package is created together with its first real
+  implementation, not in advance.
 - **Interfaces to those effects** (*ports*) are added to `core` in the same change as their
   first implementation, and shaped by what the reducer and that implementation actually need.
-  `core/src/run/ports.ts` holds `JournalStore`, `WorkerPort` and `AcceptanceGate`, which
-  `host` implements; `CodingSession` in `core/src/session.ts` is implemented by `pi`.
+  `core/src/run/ports.ts` holds `JournalStore`, `WorkerPort`, `AcceptanceGate`, `EvidenceStore`
+  and `ArtifactStore`; `host` implements all but the worker port, `worker` implements that
+  one; `CodingSession` in `core/src/session.ts` is implemented by `pi`.
 - **Use of the Pi SDK** goes into `pi`. The extension moves into its own package once it gains
   a supervisor client with different dependencies.
 - **Wiring the parts together** goes into `cli`. [Architecture: Where new code goes]
@@ -172,7 +198,8 @@ numbers are kept separate: a *graph revision* is the history of a plan's content
 ## Repository tooling
 
 `npm run check` runs the build, Biome (formatting, lint and the package rules above) and the
-Markdown link checker. The `scripts/` folder holds the link checker and the *exact-source
+Markdown link checker. `npm test`, `npm run test:types` and `npm run sim` run the local-only
+unit tests, their type check and the seeded reducer simulation. The `scripts/` folder holds the link checker and the *exact-source
 fingerprint* used to tie evidence to a precise version of the code. On GitHub, the
 `checks` workflow runs `npm ci --ignore-scripts`, `npm run check` and `npm run demo` on the
 Node.js version in `.node-version`. The `pages` workflow regenerates `site/trace.json` from the
@@ -181,18 +208,17 @@ reducer's behaviour. [Architecture: Repository tooling]
 
 ## Limitations
 
-- The host runs plans only with the fake worker and gate that ship with it: there is no
-  worker process, no supervisor and no model call yet, and the file journal is an interim
-  store. [Architecture: What runs today]
-- While a host process is alive it has no lease timer: a worker that never reports is only
-  detected when the run is resumed after a restart (decision
-  0008).
-- The reducer handles one flat plan. Nested plans, budgets and suspension are planned
+- The worker runs in the host process and the file journal and evidence stores are interim:
+  there is no worker process, no broker, no supervisor and no SQLite yet (decisions 0008, 0012).
+- One workspace per run, no worktrees, no baseline capture and no merge step: `run --worker pi`
+  edits the checkout in place (decision 0011).
+- While a host process is alive it has no lease timer: a session that never settles is only
+  interrupted by cancelling the run or restarting (decision 0008).
+- The reducer handles one flat plan. Nested plans, run-wide budgets and suspension are planned
   extensions of the same reducer, not existing features. [Architecture: What runs today, Where
   new code goes]
-- The reducer acts on acceptance decisions, but nothing turns check or review receipts into
-  them yet: review agreement and counterexamples as required checks are host policy that does
-  not exist (decision 0007).
+- One review suffices and a reviewer's `fail` rejects the producer; review agreement and
+  counterexamples as required checks are not implemented (decision 0010).
 
 ## Glossary
 

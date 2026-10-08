@@ -1,16 +1,18 @@
 import { digest } from "../canonical.js";
+import { isWriterRole } from "../graph/spec.js";
 import { topologicalOrder, validateGraph } from "../graph/validate.js";
 import type { Command } from "./commands.js";
-import type {
-  AcceptanceDecidedEvent,
-  AttemptDispatchedEvent,
-  AttemptFailedEvent,
-  AttemptStoppedEvent,
-  CancelRequestedEvent,
-  JournalEvent,
-  LeaseExpiredEvent,
-  ResultProposedEvent,
-  RunStartedEvent,
+import {
+  type AcceptanceDecidedEvent,
+  type AttemptDispatchedEvent,
+  type AttemptFailedEvent,
+  type AttemptStoppedEvent,
+  type CancelRequestedEvent,
+  type JournalEvent,
+  type LeaseExpiredEvent,
+  type ResultProposedEvent,
+  type RunStartedEvent,
+  writerSlotsOf,
 } from "./events.js";
 import { getReadyNodes } from "./readiness.js";
 import { type AttemptState, freshNodeState, isTerminalStatus, type NodeRunState, type RunState } from "./state.js";
@@ -287,7 +289,14 @@ function handleRunStarted(state: RunState, event: RunStartedEvent): DecideResult
     runId: event.runId,
     status: "running",
     graph: validated.graph,
-    policy: { maxConcurrent: event.policy.maxConcurrent, maxAttemptsPerNode: event.policy.maxAttemptsPerNode },
+    policy:
+      event.policy.maxConcurrentWriters === undefined
+        ? { maxConcurrent: event.policy.maxConcurrent, maxAttemptsPerNode: event.policy.maxAttemptsPerNode }
+        : {
+            maxConcurrent: event.policy.maxConcurrent,
+            maxAttemptsPerNode: event.policy.maxAttemptsPerNode,
+            maxConcurrentWriters: event.policy.maxConcurrentWriters,
+          },
     nodes,
     attempts: {},
     permitsInUse: 0,
@@ -679,12 +688,22 @@ function requestDueAcceptances(state: RunState): { state: RunState; commands: Co
   return { state: nodes === state.nodes ? state : { ...state, nodes }, commands };
 }
 
+/** Nodes whose attempt holds a permit right now: reserved (`ready`) or `running`. */
+function holdsPermit(node: NodeRunState): boolean {
+  return node.execution === "ready" || node.execution === "running";
+}
+
 /**
  * While the run is `running` and permits remain, reserve the next ready node's attempt and
  * emit a `dispatch` command. This only reserves (`execution: "ready"`, permit held): it
  * never marks a node `running` itself, so a second `decide` call before the host persists
  * the matching `attempt_dispatched` event will not reserve the same node again (it is no
  * longer `pending`, so `getReadyNodes` skips it).
+ *
+ * Writer-role nodes additionally need one of the policy's writer slots (decision 0011): a ready
+ * writer is skipped while every slot is held, and the loop goes on to the next ready node, so
+ * readers keep flowing around a busy workspace. The slot count is derived from the nodes that
+ * hold a permit, never stored, so it cannot drift from the permit accounting.
  */
 function runDispatchLoop(state: RunState): { state: RunState; commands: Command[] } {
   if (state.status !== "running" || state.graph === null || state.policy === null) {
@@ -693,16 +712,22 @@ function runDispatchLoop(state: RunState): { state: RunState; commands: Command[
 
   const graph = state.graph;
   const policy = state.policy;
+  const writerSlots = writerSlotsOf(policy);
+  const roleOf = new Map(graph.nodes.map((node) => [node.id, node.role]));
   const commands: Command[] = [];
   let nodes = state.nodes;
   let permitsInUse = state.permitsInUse;
+  let writersInUse = Object.entries(nodes).filter(
+    ([nodeId, node]) => holdsPermit(node) && isWriterRole(roleOf.get(nodeId) ?? "reviewer"),
+  ).length;
   let lastFencingToken = state.lastFencingToken;
 
   for (;;) {
     if (permitsInUse >= policy.maxConcurrent) break;
     const ready = getReadyNodes(graph, toNodeStatusMap(nodes));
-    const next = ready[0];
+    const next = ready.find((candidate) => !isWriterRole(candidate.role) || writersInUse < writerSlots);
     if (next === undefined) break;
+    if (isWriterRole(next.role)) writersInUse += 1;
 
     const nodeState = nodes[next.id] as NodeRunState;
     // Bind the attempt to every producer's current attempt; a ready node's producers all have one.

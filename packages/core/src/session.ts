@@ -43,6 +43,17 @@ export const ToolResultEventSchema = z.strictObject({
 });
 export type ToolResultEvent = z.infer<typeof ToolResultEventSchema>;
 
+/** Longest assistant message text a session surfaces; longer ones are cut and flagged. */
+export const MAX_ASSISTANT_TEXT_LENGTH = 65_536;
+
+/** The text of one completed assistant message, in order; the worker reads its report from the last. */
+export const AssistantMessageEventSchema = z.strictObject({
+  type: z.literal("assistant_message"),
+  text: z.string().max(MAX_ASSISTANT_TEXT_LENGTH),
+  truncated: z.boolean(),
+});
+export type AssistantMessageEvent = z.infer<typeof AssistantMessageEventSchema>;
+
 export const SettledReasonSchema = z.enum(["completed", "aborted", "error"]);
 export type SettledReason = z.infer<typeof SettledReasonSchema>;
 
@@ -64,6 +75,7 @@ export type ErrorEvent = z.infer<typeof ErrorEventSchema>;
 /** Provider-neutral session event, mapped from an SDK's own event stream. */
 export const SessionEventSchema = z.discriminatedUnion("type", [
   UsageEventSchema,
+  AssistantMessageEventSchema,
   ToolCallEventSchema,
   ToolResultEventSchema,
   SettledEventSchema,

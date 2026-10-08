@@ -40,7 +40,9 @@ accepted. Running workers are not cancelled by that; the host has no authority l
 `RunHost.start(ports, graph, policy)` and `RunHost.resume(ports, runId)` take the ports defined
 in `@auto-pi-lot/core`: `JournalStore` (durable append and read), `WorkerPort` (start and cancel
 an attempt, outcomes come back through a callback) and `AcceptanceGate`. `clock` and
-`newEventId` can be injected for deterministic tests.
+`newEventId` can be injected for deterministic tests. The optional `onEvent` callback sees every
+applied event right after the host advances its state (progress display); it is a no-op when
+absent and an error it throws is ignored.
 
 ## Fakes
 
@@ -84,6 +86,58 @@ What the file store does not do:
 
 The file store is interim until the AP-04 storage decision.
 
+## Evidence stores
+
+- `MemoryEvidenceStore` and `MemoryArtifactStore` keep records in process memory (deep-copied in
+  and out), for tests and demos.
+- `FileEvidenceStore(directory)` writes one JSON file per record,
+  `<directory>/run-<encoded runId>/<kind>-<hex>.json`, where `<hex>` is the hex part of the
+  record id (`sha256:<hex>`) and the run id uses the same encoding as the journal. `put` validates
+  the record with `EvidenceRecordSchema` and refuses one whose id is not the digest of its
+  content; it is idempotent. Files are written atomically (temp file, fsync, rename), with mode
+  `0600` in `0700` directories, and are never opened through a symbolic link. `listForRun`
+  returns a run's records sorted by id. `get(id)` does not know the run, so it scans the `run-*`
+  directories for `*-<hex>.json`: the index is the file names themselves, which is fine for the
+  small evidence of a run and not meant for large stores. A file that is unreadable, invalid or
+  whose id does not match its content throws `EvidenceCorruptError` with the path; it is never
+  skipped or overwritten.
+- `FileArtifactStore(directory)` writes `<directory>/<hex>` atomically, refuses more than
+  `MAX_ARTIFACT_BYTES` (16 MiB) and re-hashes on every `get`, throwing `EvidenceCorruptError` on a
+  mismatch.
+
+Like the journal file store, these are not tamper-evident (anyone with write access can replace
+a file together with a consistent name) and have no inter-process lock.
+
+## Evidence gate
+
+`EvidenceGate({ evidence, clock? })` is an `AcceptanceGate` that decides from records already in
+the evidence store. It never runs a check, starts a worker or calls a model; whoever ran the
+checks or the reviews must have stored the receipts first. Being in the store is not enough: the
+store sits in the workspace, where a session with file tools could plant a record, so the gate
+counts only records reachable from a proposal digest the host journaled
+(`request.proposalsByAttempt`): a check receipt named in the producer proposal's
+`checkReceiptIds`, a review named in the reviewing attempt's proposal `outputArtifactIds`.
+
+- No proposal record for the proposal digest: rejected (a worker fault, not a host fault).
+- Checker roles (verifier, falsifier, reviewer): accepted when the attempt stored a review of the
+  candidate attempt it verifies (`consumes` of the `verifies` producers) that judges every
+  acceptance criterion of that producer (`producers`) and no criterion is unclear. No such review, or an unclear one, is rejected so the reducer retries the checker. A
+  failing verdict does not reject the checker; it rejects the producer.
+- Producer roles: every check profile the node requires needs a receipt for this attempt; the
+  latest one per profile counts, must have checked the proposal's `resultRevision` (when it has
+  one) and must have passed. Any anchored review bound to this candidate attempt and digest that
+  judges every criterion of the node and has a failing verdict rejects; one that skips a
+  criterion is ignored. With no counted passing check and no counted passing review the result is
+  rejected: an acceptance must cite a receipt.
+- Every decision except a missing proposal is stored as an `AcceptanceRecord` (policy revision 1)
+  and the verdict cites at most 64 receipts (the first 64 by id; truncation is stated in the
+  reasons).
+
+What it does not do: any anchored review of the candidate counts whichever node wrote it, one
+review suffices (no two-review agreement yet), and the files are not signed, so an operator with
+write access can still edit them. Files larger than `MAX_ARTIFACT_BYTES` are treated as corrupt
+rather than read.
+
 ## Recovery on resume
 
 `resume` reads the journal, replays it with `replay` and throws `JournalReplayError` if the log
@@ -102,8 +156,9 @@ A run that is already terminal resolves `completion` at once and submits nothing
 
 ## Limitations
 
-- No real workers and no final storage backend yet: the file store is interim until the AP-04
-  storage decision.
+- No final storage backend yet: the file journal and evidence stores are interim until the
+  AP-04 storage decision. The real worker lives in `@auto-pi-lot/worker`; this package only
+  ships the scripted one.
 - No lease timer while a process is alive: a worker that hangs is never expired until a resume.
-- No budgets.
+- No run-wide budgets.
 - The journal file is not tamper-evident and has no inter-process lock (see "Journal stores").

@@ -9,15 +9,6 @@
   "references": [
     {
       "path": "../core"
-    },
-    {
-      "path": "../host"
-    },
-    {
-      "path": "../pi"
-    },
-    {
-      "path": "../worker"
     }
   ]
 }

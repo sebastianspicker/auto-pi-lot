@@ -10,6 +10,7 @@ import {
   initialState,
   type JournalEvent,
   type JournalStore,
+  type NodeSpec,
   parseDto,
   parseJournalEvent,
   type Rejection,
@@ -33,6 +34,8 @@ export interface HostPorts {
   /** Host-owned time and ids; injectable so tests are deterministic. Defaults: `new Date()` and `crypto.randomUUID()`. */
   readonly clock?: () => Date;
   readonly newEventId?: () => string;
+  /** Called with every event right after the host applies it; errors it throws are ignored. */
+  readonly onEvent?: (event: JournalEvent) => void;
 }
 
 /** An event the reducer rejected. It was never persisted and did not change the state. */
@@ -330,6 +333,7 @@ export class RunHost {
       await this.#ports.journal.append(event); // durable before anything else changes
       this.#state = decided.state;
       this.#events.push(event);
+      this.#notify(event);
       this.#recordDigest(event);
       this.#execute(decided.commands);
       return { applied: true, commands: decided.commands };
@@ -348,6 +352,14 @@ export class RunHost {
       runId: this.#runId,
       at: clock().toISOString(),
     });
+  }
+
+  #notify(event: JournalEvent): void {
+    try {
+      this.#ports.onEvent?.(event);
+    } catch {
+      // An observer must never stop the host.
+    }
   }
 
   #recordDigest(event: JournalEvent): void {
@@ -401,18 +413,25 @@ export class RunHost {
       await this.submit({ type: "attempt_stopped", attemptId });
       return;
     }
-    const node = this.#state.graph?.nodes.find((candidate) => candidate.id === command.nodeId);
-    if (node === undefined) throw new Error(`Dispatched node ${command.nodeId} is not in the graph`);
+    const graph = this.#state.graph;
+    const node = graph?.nodes.find((candidate) => candidate.id === command.nodeId);
+    if (graph === null || graph === undefined || node === undefined) {
+      throw new Error(`Dispatched node ${command.nodeId} is not in the graph`);
+    }
     this.#started.add(attemptId);
     try {
       this.#ports.worker.start(
         {
           runId: this.#runId,
+          graphId: graph.id,
+          graphRevision: graph.revision,
           nodeId: command.nodeId,
           attemptId,
           fencingToken,
           node,
           consumes: command.consumes,
+          verifies: this.#verifiedBy(command.nodeId),
+          producers: graph.nodes.filter((candidate) => Object.hasOwn(command.consumes, candidate.id)),
           repairOf: command.repairOf,
         },
         (outcome) => {
@@ -425,6 +444,19 @@ export class RunHost {
       this.#started.delete(attemptId);
       await this.submit({ type: "attempt_failed", attemptId, fencingToken, category: "worker_crashed" });
     }
+  }
+
+  /** The specs of the producers an attempt consumed. */
+  #producersOf(attemptId: string): NodeSpec[] {
+    const consumes = this.#state.attempts[attemptId]?.consumes ?? {};
+    return (this.#state.graph?.nodes ?? []).filter((candidate) => Object.hasOwn(consumes, candidate.id));
+  }
+
+  /** The producers `nodeId` verifies: those with a `result_ready` edge into it, in edge order. */
+  #verifiedBy(nodeId: string): string[] {
+    return (this.#state.graph?.edges ?? [])
+      .filter((edge) => edge.to === nodeId && edge.condition === "result_ready")
+      .map((edge) => edge.from);
   }
 
   /** Only a started worker knows the attempt; an unstarted one is stopped by `#dispatch` itself. */
@@ -445,6 +477,10 @@ export class RunHost {
       attemptId,
       node,
       proposalDigest,
+      consumes: this.#state.attempts[attemptId]?.consumes ?? {},
+      verifies: this.#verifiedBy(nodeId),
+      producers: this.#producersOf(attemptId),
+      proposalsByAttempt: Object.fromEntries(this.#proposalDigests),
     });
     const verdict = parseDto(AcceptanceVerdictSchema, answer);
     if (!verdict.ok) throw new GateProtocolError(nodeId, attemptId, verdict.issues);

@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { NodeSpec } from "../graph/spec.js";
 import { IdSchema } from "../wire.js";
 import type { JournalEvent } from "./events.js";
-import { AcceptanceDecisionSchema } from "./evidence.js";
+import { AcceptanceDecisionSchema, type EvidenceRecord } from "./evidence.js";
 import type { RejectionRef } from "./state.js";
 import { FailureCategorySchema } from "./status.js";
 
@@ -38,15 +38,44 @@ export interface JournalStore {
   read(runId: string): Promise<JournalReadResult>;
 }
 
+/**
+ * Immutable, content-addressed storage for evidence records (decision 0010). `put` is
+ * idempotent: a record's id is `identifyEvidence`'s digest of its content, so storing the same
+ * record twice is one record. Records are never updated or deleted by the host; an acceptance
+ * that was later invalidated is a new record. `listForRun` returns every record of a run in a
+ * stable order (by id), which is enough for the gate: a run's evidence is small.
+ */
+export interface EvidenceStore {
+  put(record: EvidenceRecord): Promise<string>;
+  get(id: string): Promise<EvidenceRecord | null>;
+  listForRun(runId: string): Promise<readonly EvidenceRecord[]>;
+}
+
+/**
+ * Immutable, content-addressed storage for artifact bytes (check logs, patches). `put` returns
+ * the artifact id `sha256:<hex>` of the bytes and is idempotent; `get` returns `null` for an
+ * unknown id. Implementations verify the hash on read.
+ */
+export interface ArtifactStore {
+  put(bytes: Uint8Array): Promise<string>;
+  get(id: string): Promise<Uint8Array | null>;
+}
+
 /** What the host hands a worker for one attempt. It carries no acceptance authority. */
 export interface WorkerAssignment {
   readonly runId: string;
+  readonly graphId: string;
+  readonly graphRevision: number;
   readonly nodeId: string;
   readonly attemptId: string;
   readonly fencingToken: number;
   readonly node: NodeSpec;
   /** Producer node ID -> the producer attempt this attempt consumes (decision 0005). */
   readonly consumes: Readonly<Record<string, string>>;
+  /** The producers this node verifies: those reached through a `result_ready` edge, in edge order. */
+  readonly verifies: readonly string[];
+  /** The specs of every producer in `consumes`, so a checker knows the criteria it must judge. */
+  readonly producers: readonly NodeSpec[];
   /** The rejection this attempt repairs, with the receipts that caused it. */
   readonly repairOf: RejectionRef | null;
 }
@@ -86,6 +115,19 @@ export interface AcceptanceRequest {
   readonly node: NodeSpec;
   /** The digest the worker proposed for this attempt, from its `result_proposed` event. */
   readonly proposalDigest: string;
+  /** Producer node ID -> the producer attempt this attempt consumed. */
+  readonly consumes: Readonly<Record<string, string>>;
+  /** The producers this node verifies (see `WorkerAssignment.verifies`). */
+  readonly verifies: readonly string[];
+  /** The specs of every producer in `consumes`. */
+  readonly producers: readonly NodeSpec[];
+  /**
+   * Attempt id -> the proposal digest the host journaled for it (`result_proposed`), for every
+   * attempt of the run that proposed a result. This is the gate's only trust anchor: a record is
+   * evidence only when it is reachable from one of these digests, never because it sits in the
+   * store (decision 0010).
+   */
+  readonly proposalsByAttempt: Readonly<Record<string, string>>;
 }
 
 /**
@@ -96,6 +138,8 @@ export const AcceptanceVerdictSchema = z
   .strictObject({
     decision: AcceptanceDecisionSchema,
     receiptIds: z.array(IdSchema).max(64),
+    /** Why, in the gate's own words; for operators, never for the reducer. */
+    reasons: z.array(z.string().trim().min(1).max(2000)).max(32).optional(),
   })
   .superRefine((verdict, ctx) => {
     if (verdict.decision === "accepted" && verdict.receiptIds.length === 0) {

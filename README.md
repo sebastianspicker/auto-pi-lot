@@ -3,22 +3,22 @@
 [![checks](https://github.com/sebastianspicker/auto-pi-lot/actions/workflows/ci.yml/badge.svg)](https://github.com/sebastianspicker/auto-pi-lot/actions/workflows/ci.yml)
 [![pages](https://github.com/sebastianspicker/auto-pi-lot/actions/workflows/pages.yml/badge.svg)](https://sebastianspicker.github.io/auto-pi-lot/)
 
-**In short.** auto-pi-lot is an early-stage project that will add a "graph mode" to the
-[Pi coding agent](https://www.npmjs.com/package/@earendil-works/pi-coding-agent). In graph
-mode, a coding task is split into a plan of smaller tasks, each task is run by an AI agent
-with limits on retries, and no result is trusted until ordinary, non-AI code has checked it.
-Today the decision-making core and the host that drives it exist and are tested: a plan runs
-end to end with stand-in workers, is written to a journal and survives a restart, but no
-real AI worker is attached yet. You can watch the core make decisions in the
+**In short.** auto-pi-lot runs a plan of coding tasks on your repository through the
+[Pi coding agent](https://www.npmjs.com/package/@earendil-works/pi-coding-agent), one task
+per AI session, with limits on tool calls, tokens and retries, and it trusts no result until
+your own checks (tests, linters, builds) have passed on the exact tree the session left behind
+and, where the plan says so, an independent reviewer session has judged it. Every decision is
+written to an append-only journal before it is acted on, every receipt is stored as evidence
+you can inspect, and a run survives a restart. You can watch the decision core work in the
 **[interactive trace viewer](https://sebastianspicker.github.io/auto-pi-lot/)**.
 
-> **Status: early foundation.** Built and tested: checking that a plan is well formed, the
-> decision function that runs a plan (the *reducer*), the *host* that drives it (it saves
-> every decision to an append-only journal before acting on it, and recovers a run after a
-> restart by replaying that journal), and the connection to Pi sessions. Not built yet:
-> launching worker processes, the background supervisor, the SQLite store and the
-> `/graph on` command, so nothing runs a *real* task end to end yet; the host runs plans with
-> stand-in workers. See the [roadmap](docs/roadmap.md). [README: Status]
+> **Status: local, experimental.** Built and tested: plan checking, the decision function
+> (the *reducer*), the host with its journal and evidence stores, the evidence-based
+> acceptance gate, the check runner, the session worker over the Pi SDK and the command-line
+> tool (`init`, `run`, `inspect`, `status`). Not built yet: worker processes and the background
+> supervisor, separate worktrees for parallel writers, run-wide budgets, nested plans, the
+> SQLite store and graph mode inside Pi (`/graph on`). Whether graph mode produces better code
+> than a single Pi session has not been measured. See the [roadmap](docs/roadmap.md).
 
 *About this page.* It is a plain-language edition of the project README, written for
 software engineers and engineering leads who use AI coding tools but do not know this
@@ -83,38 +83,53 @@ when its attempt is replaced is told to stop, and a result it sends late is reje
 reducer asks for *implement*'s acceptance only after *verify*'s evidence for that same attempt
 has been accepted. [README: Repair]
 
-## Try it yourself
+## Run it on your repository
 
-You need Node.js 22.19 or newer. You do not need any model credentials, and nothing below
-calls a model or costs money [README: Quick start].
+You need Node.js 22.19 or newer, Git, and Pi credentials for at least one model provider
+(run `pi` once and log in, or set the provider's API key the way Pi documents it). The
+`run --worker pi` step spends model credit and edits the files in your repository in place, so
+start it on a branch or a clean tree.
 
 ```sh
 git clone https://github.com/sebastianspicker/auto-pi-lot.git
-cd auto-pi-lot
-npm ci --ignore-scripts
-npm run check        # build, lint, import boundaries, docs checks
+cd auto-pi-lot && npm ci --ignore-scripts && npm run build
+alias auto-pi-lot="node $PWD/packages/cli/dist/index.js"
+
+cd ~/your/project
+auto-pi-lot init                 # writes auto-pi-lot.json (your checks, found in package.json scripts) and auto-pi-lot.plan.json
+$EDITOR auto-pi-lot.plan.json    # say what to implement and what must be true afterwards
+auto-pi-lot validate auto-pi-lot.plan.json
+auto-pi-lot run --worker pi --graph auto-pi-lot.plan.json
+auto-pi-lot status               # every run in .auto-pi-lot/journal with its status
+auto-pi-lot inspect <runId>      # state, attempts, proposals, check receipts, reviews, acceptance reasons
+```
+
+What happens in `run --worker pi`: the plan is checked; for each task that is ready, one
+closed Pi session opens in your repository with only the tools its role allows (a reviewer
+reads, an implementer edits); the session gets the objective, the acceptance criteria, the
+results it builds on and, after a rejection, the evidence that rejected the previous attempt;
+when it settles, the harness itself fingerprints the tree, runs the checks the task names
+from `auto-pi-lot.json` (no shell, bounded logs, timeout) and records the receipts; a reviewer
+task's verdict becomes a review receipt; the gate accepts a result only from those records.
+Writers run one at a time in the one workspace; a rejected task is retried with the receipts
+attached, up to the attempt limit. `Ctrl-C` cancels the run (sessions are aborted and a running
+check is killed) and the journal keeps everything; `run --worker pi --resume <runId>` continues
+an interrupted run from the same workspace.
+
+Without credentials you can still exercise the whole machinery with the stand-in worker:
+
+```sh
 npm run demo         # print a validated example graph and its ready nodes
 npm run fake-run     # run the example graph end to end with stand-in workers, journal in .auto-pi-lot/
 node packages/cli/dist/index.js trace   # print the scripted run traces as JSON
-node packages/cli/dist/index.js validate plan.json   # check your own plan file: issues, warnings, order, ready tasks
 ```
 
-`fake-run` executes the three-task example plan through the real host: every decision is
-appended to a journal file under `.auto-pi-lot/journal/` before the stand-in worker is
-started, the first attempt of *implement* is scripted to crash so the journal shows a retry,
-and the command prints the events and the final state. Run it again with
-`--resume <runId>` (after `--`) to rebuild that run from its journal. Nothing in it calls a
-model.
-`run --graph <file>` executes your own plan with the stand-in worker, and the
-`--max-concurrent` and `--max-attempts` flags set the policy.
-
-To load the Pi extension, build first and point Pi at it:
+To load the Pi extension, build first and point Pi at it; `/graph` currently prints how to use
+the command-line tool:
 
 ```sh
 pi --extension ./packages/pi/dist/extension.js
 ```
-
-For now, the `/graph` command only reports that graph mode is not available yet.
 
 ## How it works, in four ideas
 
@@ -128,13 +143,18 @@ For now, the `/graph` command only reports that graph mode is not available yet.
    attempt" or "check this result". Stale, duplicate or out-of-order events are rejected with
    a typed reason. After a crash, the host recovers by feeding the saved events through the
    same function again (*replay*). [README: How it works]
-3. **Results are proposals.** A worker's result stays *unverified* until the host's
-   *acceptance gate* decides. Each link between tasks says whether the next task needs any
-   result (`result_ready`) or an accepted one (`accepted`). [README: How it works]
+3. **Results are proposals; evidence decides.** A worker's result stays *unverified* until the
+   host's *acceptance gate* decides, and the gate reads only records: check receipts the
+   harness produced by running your commands against the exact tree the session left
+   (`resultRevision`), and review receipts from reviewer sessions. A failing check or review
+   rejects the task that produced the result, and its next attempt carries the receipts. Each
+   link between tasks says whether the next task needs any result (`result_ready`) or an
+   accepted one (`accepted`). [Decisions 0005, 0010]
 4. **Model providers stay at the edge.** The core knows nothing about Pi or any model API.
    The Pi adapter translates Pi's session events into neutral ones, and it never reports
    missing token usage as zero, because "unknown" and "zero" mean different things for a
-   budget. [README: How it works; Design §7]
+   budget. The session worker enforces each task's tool-call and token limits and runs in
+   the host process; it is not a sandbox. [Decision 0012; Design §7, §9]
 
 The complete target design, including tasks that start their own sub-plans, budgets,
 separate workspaces and crash recovery, is in the [design document](docs/design.md). Most of
@@ -145,9 +165,10 @@ it is not built yet.
 | Path | Contents |
 | --- | --- |
 | [`packages/core`](packages/core/README.md) | The deterministic core: data formats, plan checking, the reducer, evidence records, the ports the host needs and the interface to model sessions |
-| [`packages/host`](packages/host/README.md) | The host: the loop that persists each decision and then acts on it, the journal stores, and stand-in workers for testing |
-| [`packages/pi`](packages/pi/README.md) | Everything that touches the Pi software development kit (SDK): the session adapter and the `/graph` extension |
-| [`packages/cli`](packages/cli/README.md) | The `demo`, `trace`, `validate` and `run` commands, and later the local supervisor |
+| [`packages/host`](packages/host/README.md) | The host: the loop that persists each decision and then acts on it, the journal, evidence and artifact stores, the evidence gate, and stand-in workers for testing |
+| [`packages/worker`](packages/worker/README.md) | The session worker that runs one task through a coding session, the check runner and the workspace fingerprint |
+| [`packages/pi`](packages/pi/README.md) | Everything that touches the Pi software development kit (SDK): the session adapter, the session opener and the `/graph` extension |
+| [`packages/cli`](packages/cli/README.md) | The `init`, `validate`, `run`, `inspect`, `status`, `artifact`, `demo` and `trace` commands |
 | [`site/`](site) | The trace viewer published to GitHub Pages |
 | [`docs/`](docs/architecture.md) | Architecture, design and roadmap |
 
@@ -172,19 +193,29 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Limitations
 
-- The project cannot yet run a real coding task. The host runs plans only with the stand-in
-  worker and acceptance gate that ship with it; there are no worker processes and no model
-  calls. Everything shown in the viewer is a scripted host driving the real decision
-  function. [README: Status; Architecture: What runs today]
-- The journal file is an interim store. The storage decision (SQLite or otherwise) is still
-  open, and a worker that hangs is only noticed when the run is resumed after a restart
-  (decision 0008).
-- The benefits described above are design goals. Whether graph mode produces better coding
-  results than a single Pi session has not been measured; that measurement is a planned,
-  separately authorised step. [Roadmap: M3, M6; Design §14]
-- Turning check and review receipts into a finding is not implemented: the host asks an
-  injected acceptance gate, and the only gates that exist are scripted ones.
-- The `/graph` command exists only as a placeholder.
+- **Not a sandbox.** An implementer session holds Pi's `bash`, `edit` and `write` tools with
+  your authority in your repository, and checks run your commands. Pi's read tools accept
+  absolute paths, so any session can read files outside the workspace, credentials included.
+  `.git/` (hooks, config) is outside the fingerprint and outside `git diff`. Use it on trusted
+  repositories, on a branch or a clean tree, and read the diff before you keep it (design §9).
+- **Evidence is anchored, not tamper-proof.** Receipts count only when the journaled proposal
+  of the attempt names them (decision 0010), which stops a session from planting one. The
+  `.auto-pi-lot/` files themselves are not signed; anyone with write access to the checkout can
+  edit them, and a run's `auto-pi-lot.json` is read fresh on every run, so review it in the diff.
+- **One workspace per run.** Writers run one at a time, readers may run alongside, and there
+  are no worktrees, no baseline capture and no merge step; the result is whatever the sessions
+  left in the checkout, plus the evidence (decision 0011).
+- **In-process worker, interim stores.** There are no worker processes, no supervisor and no
+  SQLite yet; the journal and evidence files under `.auto-pi-lot/` are the stores (decisions
+  0008, 0012). A session that never settles is interrupted only by cancelling the run.
+- **Limits are per task, not per run.** Tool calls and reported tokens are bounded per task
+  after each event; there is no run-wide budget and no check of a request before it is sent.
+- **One review suffices.** A reviewer's `fail` rejects the producer on its own and an `unclear`
+  review is retried; two-review agreement and counterexamples as required checks are not
+  implemented (decision 0010).
+- **Unmeasured.** Whether graph mode produces better coding results than a single Pi session
+  has not been measured; that is a planned, separately authorised step (roadmap M3, M6).
+- **Pi integration is a command-line tool.** `/graph` inside Pi only prints how to use it.
 
 ## Glossary
 

@@ -1,3 +1,5 @@
+export { EvidenceCorruptError, FileArtifactStore, FileEvidenceStore } from "./evidence/file.js";
+export { MAX_ARTIFACT_BYTES, MemoryArtifactStore, MemoryEvidenceStore } from "./evidence/memory.js";
 export {
   type FakeMode,
   ScriptedGate,
@@ -5,6 +7,7 @@ export {
   ScriptedWorker,
   type ScriptedWorkerOptions,
 } from "./fakes.js";
+export { EvidenceGate, type EvidenceGateOptions } from "./gate.js";
 export {
   GateProtocolError,
   type HostPorts,
@@ -16,3 +19,4 @@ export {
 } from "./host.js";
 export { FileJournalStore, JournalCorruptError, MAX_RECORD_BYTES } from "./journal/file.js";
 export { type MemoryJournalOptions, MemoryJournalStore } from "./journal/memory.js";
+export { encodeRunId } from "./paths.js";

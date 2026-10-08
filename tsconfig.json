@@ -8,6 +8,9 @@
       "path": "packages/host"
     },
     {
+      "path": "packages/worker"
+    },
+    {
       "path": "packages/pi"
     },
     {

@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { digest } from "../canonical.js";
 import { IdSchema, SchemaVersionSchema } from "../wire.js";
 
 /**
@@ -17,17 +18,26 @@ const positiveInteger = z.number().int().positive();
  */
 export const ResultProposalSchema = z
   .strictObject({
+    kind: z.literal("proposal"),
     schemaVersion: SchemaVersionSchema,
+    id: IdSchema,
     runId: IdSchema,
     graphId: IdSchema,
     graphRevision: positiveInteger,
     nodeId: IdSchema,
     attemptId: IdSchema,
     summary: z.string().trim().min(1),
-    outputArtifactIds: z.array(IdSchema),
+    /** Artifacts the attempt produced; for a checker, its review receipt. */
+    outputArtifactIds: z.array(IdSchema).max(64),
     claims: z.array(z.string().trim().min(1)),
     limitations: z.array(z.string().trim().min(1)),
     requestedChecks: z.array(IdSchema),
+    /**
+     * The check receipts the host-side worker recorded for this attempt. The gate counts only
+     * these (decision 0010): a receipt that no journal-anchored proposal names is not evidence,
+     * however well-formed, so a model that can write files cannot plant one.
+     */
+    checkReceiptIds: z.array(IdSchema).max(64),
     inputFingerprint: IdSchema,
     baseRevision: IdSchema.optional(),
     resultRevision: IdSchema.optional(),
@@ -55,8 +65,12 @@ export type TestCount = z.infer<typeof TestCountSchema>;
 
 /** A deterministic check execution; distinguishable from model judgment. */
 export const CheckReceiptSchema = z.strictObject({
+  kind: z.literal("check"),
   schemaVersion: SchemaVersionSchema,
   id: IdSchema,
+  runId: IdSchema,
+  /** The attempt whose workspace state this check ran against. */
+  attemptId: IdSchema,
   profileId: IdSchema,
   profileVersion: IdSchema,
   executable: z.string().trim().min(1),
@@ -77,17 +91,24 @@ export const ReviewVerdictSchema = z.enum(["pass", "fail", "unclear"]);
 export type ReviewVerdict = z.infer<typeof ReviewVerdictSchema>;
 
 export const ReviewCriterionVerdictSchema = z.strictObject({
-  criterion: z.string().trim().min(1),
+  criterion: z.string().trim().min(1).max(2000),
   verdict: ReviewVerdictSchema,
-  evidenceIds: z.array(IdSchema),
+  evidenceIds: z.array(IdSchema).max(64),
+  /** The reviewer's own words about this criterion; data, not a decision. */
+  note: z.string().trim().min(1).max(2000).optional(),
 });
 export type ReviewCriterionVerdict = z.infer<typeof ReviewCriterionVerdictSchema>;
 
 /** Independent criterion assessment; model judgment stays distinguishable from checks. */
 export const ReviewReceiptSchema = z.strictObject({
+  kind: z.literal("review"),
   schemaVersion: SchemaVersionSchema,
   id: IdSchema,
+  runId: IdSchema,
+  /** The proposal digest of the producer result the reviewer looked at. */
   candidateDigest: IdSchema,
+  /** The producer attempt that proposed the candidate. */
+  candidateAttemptId: IdSchema,
   reviewerAttemptId: IdSchema,
   verdicts: z.array(ReviewCriterionVerdictSchema).min(1),
   limitations: z.array(z.string().trim().min(1)),
@@ -106,12 +127,14 @@ export type Invalidation = z.infer<typeof InvalidationSchema>;
 /** The host's own decision, tied to the exact candidate/input and required receipts. */
 export const AcceptanceRecordSchema = z
   .strictObject({
+    kind: z.literal("acceptance"),
     schemaVersion: SchemaVersionSchema,
     id: IdSchema,
     runId: IdSchema,
     graphId: IdSchema,
     graphRevision: positiveInteger,
     nodeId: IdSchema,
+    attemptId: IdSchema,
     proposalDigest: IdSchema,
     inputFingerprint: IdSchema,
     decision: AcceptanceDecisionSchema,
@@ -119,6 +142,8 @@ export const AcceptanceRecordSchema = z
     reviewReceiptIds: z.array(IdSchema),
     policyRevision: positiveInteger,
     decidedAt: z.iso.datetime(),
+    /** The gate's explanation, for operators. */
+    reasons: z.array(z.string().trim().min(1).max(2000)).max(32).optional(),
     invalidation: InvalidationSchema.optional(),
   })
   .superRefine((record, context) => {
@@ -131,3 +156,24 @@ export const AcceptanceRecordSchema = z
     }
   });
 export type AcceptanceRecord = z.infer<typeof AcceptanceRecordSchema>;
+
+/** Every record an evidence store holds, told apart by `kind`. */
+export const EvidenceRecordSchema = z.discriminatedUnion("kind", [
+  ResultProposalSchema,
+  CheckReceiptSchema,
+  ReviewReceiptSchema,
+  AcceptanceRecordSchema,
+]);
+export type EvidenceRecord = z.infer<typeof EvidenceRecordSchema>;
+export type EvidenceKind = EvidenceRecord["kind"];
+
+/**
+ * An evidence record's identity is the digest of its content without the `id` field, so the
+ * same record always gets the same id and a record cannot be altered without changing its id.
+ * Returns the record with `id` filled in. A `result_proposed` event's `proposalDigest` is the
+ * id of the proposal record.
+ */
+export function identifyEvidence<T extends { readonly id: string }>(record: Omit<T, "id">): T {
+  const { id: _ignored, ...content } = record as Omit<T, "id"> & { id?: unknown };
+  return { ...(content as object), id: digest(content) } as T;
+}

@@ -1,4 +1,5 @@
 import {
+  MAX_ASSISTANT_TEXT_LENGTH,
   MAX_SESSION_ERROR_MESSAGE_LENGTH,
   type SessionEvent,
   type SettledReason,
@@ -74,6 +75,20 @@ function outcomeOfAgentEnd(event: Extract<AgentSessionEvent, { type: "agent_end"
   return { reason: "completed", willRetry: event.willRetry };
 }
 
+/**
+ * The text parts of a completed assistant message, joined by blank lines; thinking and tool
+ * calls are not text. Bounded: a longer text keeps its tail and is flagged, never dropped.
+ */
+function mapAssistantText(message: AssistantRunMessage): SessionEvent {
+  const text = message.content
+    .filter((part): part is Extract<(typeof message.content)[number], { type: "text" }> => part.type === "text")
+    .map((part) => part.text)
+    .join("\n\n");
+  if (text.length <= MAX_ASSISTANT_TEXT_LENGTH) return { type: "assistant_message", text, truncated: false };
+  // The report block sits at the end of a message, so the tail is what a consumer needs.
+  return { type: "assistant_message", text: text.slice(-MAX_ASSISTANT_TEXT_LENGTH), truncated: true };
+}
+
 function mapAssistantUsage(message: AssistantRunMessage): SessionEvent {
   // The SDK synthesises a zero-usage message for a failed or aborted run; that is no measurement.
   if ((message.stopReason === "error" || message.stopReason === "aborted") && isZeroUsage(message.usage)) {
@@ -96,7 +111,7 @@ export function createPiEventMapper(): (event: AgentSessionEvent) => SessionEven
     switch (event.type) {
       case "message_end":
         if (event.message.role !== "assistant") return [];
-        return [mapAssistantUsage(event.message)];
+        return [mapAssistantUsage(event.message), mapAssistantText(event.message)];
       case "compaction_end":
         // Compaction summaries are themselves LLM calls; usage is optional per the SDK's
         // own declared `CompactionResult` type when the summary run didn't report it.

@@ -21,7 +21,9 @@ export type IssueCode =
   | "root_has_owner"
   | "child_missing_owner"
   | "delegation_beyond_depth"
-  | "verifier_waits_for_acceptance";
+  | "verifier_waits_for_acceptance"
+  | "unknown_check_profile"
+  | "duplicate_check_profile";
 
 export interface ValidationIssue {
   code: IssueCode;

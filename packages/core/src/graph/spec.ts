@@ -15,6 +15,20 @@ export const RoleSchema = z.enum([
 ]);
 export type Role = z.infer<typeof RoleSchema>;
 
+/** Roles whose attempts may change the workspace; they compete for the run's writer slots. */
+export const WRITER_ROLES: readonly Role[] = ["implementer", "integrator"];
+
+export function isWriterRole(role: Role): boolean {
+  return WRITER_ROLES.includes(role);
+}
+
+/** Roles whose result is itself a review receipt about a consumed producer's result. */
+export const CHECKER_ROLES: readonly Role[] = ["verifier", "falsifier", "reviewer"];
+
+export function isCheckerRole(role: Role): boolean {
+  return CHECKER_ROLES.includes(role);
+}
+
 export const NodeLimitsSchema = z.strictObject({
   maxTokens: positiveInteger,
   maxToolCalls: positiveInteger,
@@ -28,6 +42,14 @@ export const NodeSpecSchema = z.strictObject({
   objective: z.string().trim().min(1),
   acceptanceCriteria: z.array(z.string().trim().min(1)).min(1),
   inputArtifactIds: z.array(IdSchema).optional(),
+  /**
+   * Check profile ids (see `CheckProfileSchema`) the host runs against the workspace after each
+   * attempt of this node; every one must pass before the result can be accepted. Omitted or
+   * empty: no deterministic check, so acceptance rests on verifying nodes alone.
+   */
+  checks: z.array(IdSchema).max(32).optional(),
+  /** Extra guidance handed to the worker verbatim, as data: it cannot widen the node's permissions. */
+  instructions: z.string().trim().min(1).max(20_000).optional(),
   limits: NodeLimitsSchema,
 });
 export type NodeSpec = z.infer<typeof NodeSpecSchema>;
