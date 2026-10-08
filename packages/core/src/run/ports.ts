@@ -4,8 +4,15 @@ import type { NodeSpec } from "../graph/spec.js";
 import { IdSchema } from "../wire.js";
 import type { JournalEvent } from "./events.js";
 import { AcceptanceDecisionSchema, type EvidenceRecord } from "./evidence.js";
+import type { RunVerificationResult } from "./execution.js";
 import type { RejectionRef } from "./state.js";
 import { FailureCategorySchema } from "./status.js";
+
+/** Checks the integrated workspace after all task evidence is accepted; cancellation must settle verify. */
+export interface RunVerifier {
+  verify(runId: string): Promise<RunVerificationResult>;
+  cancel(): void;
+}
 
 /**
  * Ports are the interfaces through which the host reaches the outside world. `core` defines

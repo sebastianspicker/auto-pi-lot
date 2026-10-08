@@ -15,17 +15,17 @@ npm run check
 ```
 
 `npm run check` builds every package and runs Biome (formatting, lint and import boundaries)
-plus the Markdown link check. CI runs the same command. The test suite and the simulation are
-kept outside Git (`packages/*/test/`, `tsconfig.test.json`); run them locally with `npm test`,
-`npm run test:types` and `npm run sim` before opening a pull request, and say in the pull
-request that you did.
+plus the Markdown link check. Tests, their fixtures and configuration, the simulation, and
+ADRs are versioned. Before opening a pull request, also run `npm run test:types`, `npm test`,
+and `npm run sim`. CI runs all four checks on Linux and macOS with Node 22.19 and 26.9.
+The implementation ledger remains local and is not a CI gate.
 
 Other useful commands:
 
 | Command | What it does |
 | --- | --- |
 | `npm run format` | Apply Biome formatting and safe fixes |
-| `npm test` | Run the unit tests (local-only files, see below) |
+| `npm test` | Run unit and integration tests (build first) |
 | `npm run test:types` | Type-check the tests |
 | `npm run sim` | Run the seeded reducer simulation over 2000 seeds |
 | `npm run demo` | Print the example graph, its topological order and its ready nodes |

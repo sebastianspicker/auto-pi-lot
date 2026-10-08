@@ -37,12 +37,18 @@ accepted. Running workers are not cancelled by that; the host has no authority l
 
 ## Ports
 
-`RunHost.start(ports, graph, policy)` and `RunHost.resume(ports, runId)` take the ports defined
+`RunHost.start(ports, graph, policy, execution?)` and `RunHost.resume(ports, runId)` take the ports defined
 in `@auto-pi-lot/core`: `JournalStore` (durable append and read), `WorkerPort` (start and cancel
 an attempt, outcomes come back through a callback) and `AcceptanceGate`. `clock` and
 `newEventId` can be injected for deterministic tests. The optional `onEvent` callback sees every
 applied event right after the host advances its state (progress display); it is a no-op when
 absent and an error it throws is ignored.
+
+A policy with `requireFinalVerification` requires a `RunVerifier` before start or nonterminal
+resume. The durable final task acceptance requests `verify_run`; the host validates and journals
+`run_verified` before completion. Failed appends leave verification pending for recovery. The
+composition root owns verifier cancellation/cleanup if the host fails. Completed resumes need
+no verifier. The optional execution manifest is validated with the start event.
 
 ## Fakes
 
@@ -60,8 +66,7 @@ which lets a test stop a run mid-attempt and simulate a crash. The memory store 
   `-`, `_` and `.` and percent-encodes every other byte, so two run ids never share a file even
   on a case-insensitive file system and the name is never a path or a reserved device name. Each
   line is one `{seq, digest, event}` record: `seq` is 1-based and contiguous, `digest` is core's
-  canonical SHA-256 of the event. A record is at most `MAX_RECORD_BYTES` (1 MiB; ids are bounded
-  by core, so a well-formed event never reaches it). Every append is written completely and
+  canonical SHA-256 of the event. A record is at most `MAX_RECORD_BYTES` (1 MiB; an oversized event is rejected before dispatch). Every append is written completely and
   fsynced before it resolves (the directory too when the file is new); files are created with
   mode `0600` in a `0700` directory and are never opened through a symbolic link. Appends for one
   run are serialized within a store instance. The host never modifies a record it wrote; the only

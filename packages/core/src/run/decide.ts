@@ -12,6 +12,7 @@ import {
   type LeaseExpiredEvent,
   type ResultProposedEvent,
   type RunStartedEvent,
+  type RunVerifiedEvent,
   writerSlotsOf,
 } from "./events.js";
 import { getReadyNodes } from "./readiness.js";
@@ -286,17 +287,16 @@ function handleRunStarted(state: RunState, event: RunStartedEvent): DecideResult
   );
 
   return accept({
+    finalCheckIds:
+      event.execution?.worker === "pi"
+        ? [...event.execution.finalCheckIds]
+        : [...new Set(event.graph.nodes.flatMap((node) => node.checks ?? []))],
+    verificationRequested: false,
+    verification: null,
     runId: event.runId,
     status: "running",
     graph: validated.graph,
-    policy:
-      event.policy.maxConcurrentWriters === undefined
-        ? { maxConcurrent: event.policy.maxConcurrent, maxAttemptsPerNode: event.policy.maxAttemptsPerNode }
-        : {
-            maxConcurrent: event.policy.maxConcurrent,
-            maxAttemptsPerNode: event.policy.maxAttemptsPerNode,
-            maxConcurrentWriters: event.policy.maxConcurrentWriters,
-          },
+    policy: { ...event.policy },
     nodes,
     attempts: {},
     permitsInUse: 0,
@@ -575,6 +575,9 @@ function handleLeaseExpired(state: RunState, event: LeaseExpiredEvent): DecideRe
 }
 
 function handleCancelRequested(state: RunState, _event: CancelRequestedEvent): DecideResult {
+  if (state.status === "verifying") {
+    return accept({ ...state, status: "cancelling" }, [{ type: "cancel_verification" }]);
+  }
   if (state.status !== "running") {
     return reject(state, "invalid_transition", `Run is not running (status: ${state.status})`);
   }
@@ -806,15 +809,56 @@ function hasOutstandingAcceptance(state: RunState): boolean {
 function checkCompletion(state: RunState, commands: readonly Command[]): DecideResult {
   if (state.status === "running") {
     if (allAccepted(state)) {
+      if (state.policy?.requireFinalVerification) {
+        return accept({ ...state, status: "verifying", verificationRequested: true }, [
+          ...commands,
+          { type: "verify_run" },
+        ]);
+      }
       return accept({ ...state, status: "succeeded" }, [...commands, { type: "complete_run", status: "succeeded" }]);
     }
     if (isProgressImpossible(state)) {
       return accept({ ...state, status: "failed" }, [...commands, { type: "complete_run", status: "failed" }]);
     }
-  } else if (state.status === "cancelling" && state.permitsInUse === 0 && !hasOutstandingAcceptance(state)) {
+  } else if (
+    state.status === "cancelling" &&
+    !state.verificationRequested &&
+    state.permitsInUse === 0 &&
+    !hasOutstandingAcceptance(state)
+  ) {
     return accept({ ...state, status: "cancelled" }, [...commands, { type: "complete_run", status: "cancelled" }]);
   }
   return accept(state, commands);
+}
+
+function handleRunVerified(state: RunState, event: RunVerifiedEvent): DecideResult {
+  if (!state.verificationRequested || (state.status !== "verifying" && state.status !== "cancelling")) {
+    return reject(state, "invalid_transition", "No final verification is outstanding");
+  }
+  if (event.result.outcome === "passed") {
+    const required = new Set(state.finalCheckIds);
+    if (
+      event.result.sourceDigest === undefined ||
+      required.size !== event.result.checkProfileIds.length ||
+      event.result.checkReceiptIds.length !== required.size ||
+      event.result.checkProfileIds.some((id) => !required.has(id))
+    ) {
+      return reject(
+        state,
+        "missing_evidence",
+        "Final verification must cover every declared check against one source revision",
+      );
+    }
+  }
+  const status =
+    state.status === "cancelling" || event.result.outcome === "cancelled"
+      ? "cancelled"
+      : event.result.outcome === "passed"
+        ? "succeeded"
+        : "failed";
+  return accept({ ...state, status, verificationRequested: false, verification: event.result }, [
+    { type: "complete_run", status },
+  ]);
 }
 
 function guardEvent(state: RunState, event: JournalEvent): DecideResult | null {
@@ -861,6 +905,8 @@ function applyHandler(state: RunState, event: JournalEvent): DecideResult {
       return handleCancelRequested(state, event);
     case "attempt_stopped":
       return handleAttemptStopped(state, event);
+    case "run_verified":
+      return handleRunVerified(state, event);
     default:
       // Defensive: keeps `decide` total even if a caller casts malformed data past the
       // `JournalEvent` type instead of going through `parseJournalEvent` first.

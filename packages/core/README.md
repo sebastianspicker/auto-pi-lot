@@ -22,15 +22,16 @@ alone; `packages/pi` may use only the latter.
 | `graph/validate.ts` | `ValidatedGraph`, `validateGraph`, `topologicalOrder`, `parseGraphSpec` |
 | `run/status.ts` | `ExecutionState`, `ResultDisposition`, `FailureCategory`, `NodeStatus`, `isDependencySatisfied` |
 | `run/evidence.ts` | `ResultProposal`, `CheckReceipt`, `ReviewReceipt`, `AcceptanceRecord`, the `EvidenceRecord` union by `kind`, `identifyEvidence` |
+| `run/execution.ts` | `ExecutionManifest`, `RunVerificationResult`, check profiles and model route schemas |
 | `run/checks.ts` | `CheckProfile`, `ProjectConfig` (the `auto-pi-lot.json` file), `ModelRoute`, `validateGraphChecks` |
 | `run/report.ts` | `WorkReport`, `ReviewReport` (what a worker's final message must contain), `extractJsonBlock` |
 | `run/events.ts` | `JournalEvent` discriminated union, `RunPolicy` (with `maxConcurrentWriters`, `writerSlotsOf`), `parseJournalEvent` |
 | `run/state.ts` | `RunState`, `NodeRunState`, `AttemptState`, `initialState`, `freshNodeState`, `isTerminalStatus` |
-| `run/commands.ts` | `Command` (`dispatch`, `evaluate_acceptance`, `cancel_attempt`, `complete_run`) |
+| `run/commands.ts` | `Command` (`dispatch`, `evaluate_acceptance`, `cancel_attempt`, `verify_run`, `cancel_verification`, `complete_run`) |
 | `run/readiness.ts` | `getReadyNodes` |
 | `run/decide.ts` | `decide`: the pure run reducer |
 | `run/replay.ts` | `replay` |
-| `run/ports.ts` | `JournalStore`, `WorkerPort`, `AcceptanceGate`, `EvidenceStore`, `ArtifactStore` and their request and outcome types: the interfaces the host needs, implemented outside `core` |
+| `run/ports.ts` | `JournalStore`, `WorkerPort`, `AcceptanceGate`, `EvidenceStore`, `ArtifactStore`, `RunVerifier` and their request and outcome types: the interfaces the host needs, implemented outside `core` |
 | `session.ts` | `SessionEvent`, `CodingSession` (also the `./session` subpath) |
 
 ## Wire identity
@@ -83,7 +84,7 @@ records that a journal `result_proposed` event's `proposalDigest` (the proposal'
 `run/checks.ts` holds what an operator configures: a `CheckProfile` is one executable with an
 argument list (never a shell string), an optional directory inside the workspace and a timeout;
 `ProjectConfig` is the strict shape of the `auto-pi-lot.json` file (profiles, an optional pinned
-`ModelRoute`, a thinking level and default `RunPolicy`); `validateGraphChecks` reports a node
+`ModelRoute`, a thinking level, default `RunPolicy` and final-only `finalChecks`); `validateGraphChecks` reports a node
 whose `checks` name no configured profile (`unknown_check_profile`) and duplicate profile ids.
 
 `run/report.ts` holds what a worker's final message must contain: `WorkReportSchema`
@@ -141,7 +142,7 @@ share one workspace can serialise writers while readers keep flowing (decision 0
 retries per node, `result_ready` versus `accepted` dependency
 edges, fencing tokens, host acceptance decisions, and cancellation. `decide` emits
 reducer-internal `Command`s (`run/commands.ts`: `dispatch`, `evaluate_acceptance`,
-`cancel_attempt`, `complete_run`) for the host to turn into effects and report back as new
+`cancel_attempt`, `verify_run`, `cancel_verification`, `complete_run`) for the host to turn into effects and report back as new
 events. `replay(events)` (`run/replay.ts`) folds `decide` over a committed event log; this is
 the same code path recovery uses to rebuild a run's state.
 
@@ -229,3 +230,19 @@ characters) and is never a place for credentials or raw provider payloads.
 an unsubscribe function. `session.ts` imports only `zod` and is also exported as the
 `./session` subpath, so consumers that need only the session port never load the run reducer
 or graph validation.
+
+`NodeLimits.timeoutMs` optionally bounds an attempt's wall-clock allowance, including setup
+and checks. `DEFAULT_ATTEMPT_TIMEOUT_MS` is 30 minutes; `MAX_ATTEMPT_TIMEOUT_MS` is 24 hours.
+The session worker implements cancellation at the deadline; the reducer records its typed
+`deadline_exceeded` outcome. Real CLI runs require serial execution until immutable reader
+snapshots exist (decision 0013); the core scheduler retains its general concurrency contract.
+
+## Run verification
+
+`RunState.status` distinguishes final `verifying` from per-node review. With
+`requireFinalVerification`, all accepted nodes request `verify_run` instead of completing the
+run. A `run_verified` event must cite every required final profile and receipt against a source
+digest before success. Cancellation stays pending until verification settles. Legacy policies
+without this flag preserve their replay behavior. New Pi execution manifests require the flag
+and include every node check plus any final-only checks. See
+[decision 0014](../../docs/decisions/0014-recorded-execution-and-final-verification.md).

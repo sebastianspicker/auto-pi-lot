@@ -3,6 +3,7 @@ import { z } from "zod";
 import { GraphSpecSchema } from "../graph/spec.js";
 import { IdSchema, parseDto, SchemaVersionSchema, type ValidationIssue } from "../wire.js";
 import { AcceptanceDecisionSchema } from "./evidence.js";
+import { ExecutionManifestSchema, RunVerificationResultSchema } from "./execution.js";
 import { FailureCategorySchema } from "./status.js";
 
 const positiveInteger = z.number().int().positive();
@@ -25,6 +26,8 @@ export const RunPolicySchema = z.strictObject({
    * so earlier journals keep their digests.
    */
   maxConcurrentWriters: positiveInteger.optional(),
+  /** Require a journaled final-tree verification before success. */
+  requireFinalVerification: z.boolean().optional(),
 });
 export type RunPolicy = z.infer<typeof RunPolicySchema>;
 
@@ -34,12 +37,32 @@ export function writerSlotsOf(policy: RunPolicy): number {
 }
 
 /** The host admitted a run: the graph it will execute and the policy bounding it. */
-export const RunStartedEventSchema = z.strictObject({
-  type: z.literal("run_started"),
-  ...journalEventBase,
-  graph: GraphSpecSchema,
-  policy: RunPolicySchema,
-});
+export const RunStartedEventSchema = z
+  .strictObject({
+    type: z.literal("run_started"),
+    ...journalEventBase,
+    graph: GraphSpecSchema,
+    policy: RunPolicySchema,
+    execution: ExecutionManifestSchema.optional(),
+  })
+  .superRefine((event, ctx) => {
+    const execution = event.execution;
+    if (execution?.worker !== "pi") return;
+    const profiles = new Set(execution.checks.map((profile) => profile.id));
+    const required = new Set(event.graph.nodes.flatMap((node) => node.checks ?? []));
+    if (
+      !event.policy.requireFinalVerification ||
+      profiles.size !== execution.checks.length ||
+      new Set(execution.finalCheckIds).size !== execution.finalCheckIds.length ||
+      [...required].some((id) => !execution.finalCheckIds.includes(id)) ||
+      execution.finalCheckIds.some((id) => !profiles.has(id))
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Pi execution must pin every declared final check and require final verification",
+      });
+    }
+  });
 export type RunStartedEvent = z.infer<typeof RunStartedEventSchema>;
 
 /**
@@ -122,6 +145,13 @@ export const AttemptStoppedEventSchema = z.strictObject({
 });
 export type AttemptStoppedEvent = z.infer<typeof AttemptStoppedEventSchema>;
 
+export const RunVerifiedEventSchema = z.strictObject({
+  type: z.literal("run_verified"),
+  ...journalEventBase,
+  result: RunVerificationResultSchema,
+});
+export type RunVerifiedEvent = z.infer<typeof RunVerifiedEventSchema>;
+
 export const JournalEventSchema = z.discriminatedUnion("type", [
   RunStartedEventSchema,
   AttemptDispatchedEventSchema,
@@ -131,6 +161,7 @@ export const JournalEventSchema = z.discriminatedUnion("type", [
   LeaseExpiredEventSchema,
   CancelRequestedEventSchema,
   AttemptStoppedEventSchema,
+  RunVerifiedEventSchema,
 ]);
 export type JournalEvent = z.infer<typeof JournalEventSchema>;
 

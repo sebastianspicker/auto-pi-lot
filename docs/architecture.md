@@ -69,8 +69,8 @@ For the finished product see the [design document](design.md); for progress see 
   task packet from the node, the results it consumes and any rejection it repairs, opens a
   closed coding session with the tools its role allows, enforces the node's tool-call and token
   limits, reads the model's final report, fingerprints the workspace, runs the node's declared
-  checks itself (no shell, environment allowlist, timeout) and stores the evidence. The run's
-  writers are serialised by the reducer's writer slots (decision 0011). It is in-process, not a
+  checks itself (no shell, environment allowlist, timeout) and stores the evidence. The CLI requires serial attempts for Pi so checks and reviews cannot overlap edits,
+  and holds filesystem ownership locks across the run (decision 0013). It is in-process, not a
   sandbox (decision 0012).
 - **Pi session opener.** `createPiSessionOpener` (`packages/pi`) pins the model route and opens
   a closed Pi session per attempt: in-memory transcript, no extensions or skills, the worker's
@@ -82,7 +82,8 @@ For the finished product see the [design document](design.md); for progress see 
   checks a plan file and lists its issues, warnings, task order and ready tasks. `run` executes
   a plan through the host: with `--worker pi` on your repository with real sessions and your
   checks, otherwise with the fake worker and gate. `inspect` shows a run's state and evidence,
-  `status` lists runs, `artifact` prints a stored log. `demo` prints the example plan and
+  `status` lists runs, `artifact` prints a stored log. `check` runs baseline profiles without a
+  model; `run --dry-run` previews validated configuration without writes or model setup. `demo` prints the example plan and
   `trace` runs four scripted scenarios through the real reducer for the
   [trace viewer](https://sebastianspicker.github.io/auto-pi-lot/) (`site/`). [Architecture:
   What runs today]
@@ -189,8 +190,8 @@ numbers are kept separate: a *graph revision* is the history of a plan's content
 - **Interfaces to those effects** (*ports*) are added to `core` in the same change as their
   first implementation, and shaped by what the reducer and that implementation actually need.
   `core/src/run/ports.ts` holds `JournalStore`, `WorkerPort`, `AcceptanceGate`, `EvidenceStore`
-  and `ArtifactStore`; `host` implements all but the worker port, `worker` implements that
-  one; `CodingSession` in `core/src/session.ts` is implemented by `pi`.
+  `ArtifactStore` and `RunVerifier`; `host` implements the storage and gate ports, `worker`
+  implements `WorkerPort` and `RunVerifier`; `CodingSession` in `core/src/session.ts` is implemented by `pi`.
 - **Use of the Pi SDK** goes into `pi`. The extension moves into its own package once it gains
   a supervisor client with different dependencies.
 - **Wiring the parts together** goes into `cli`. [Architecture: Where new code goes]
@@ -198,13 +199,22 @@ numbers are kept separate: a *graph revision* is the history of a plan's content
 ## Repository tooling
 
 `npm run check` runs the build, Biome (formatting, lint and the package rules above) and the
-Markdown link checker. `npm test`, `npm run test:types` and `npm run sim` run the local-only
-unit tests, their type check and the seeded reducer simulation. The `scripts/` folder holds the link checker and the *exact-source
+Markdown link checker. `npm test`, `npm run test:types` and `npm run sim` run the versioned
+unit/integration tests, their type check and the seeded reducer simulation. The `scripts/` folder holds the link checker and the *exact-source
 fingerprint* used to tie evidence to a precise version of the code. On GitHub, the
-`checks` workflow runs `npm ci --ignore-scripts`, `npm run check` and `npm run demo` on the
-Node.js version in `.node-version`. The `pages` workflow regenerates `site/trace.json` from the
+`checks` workflow runs `npm ci --ignore-scripts`, `npm run check`, `npm run test:types`,
+`npm test`, `npm run sim`, and `npm run demo` on Linux/macOS and Node 22.19/26.9. The `pages` workflow regenerates `site/trace.json` from the
 same commit and publishes `site/` to GitHub Pages, so the viewer always shows the current
 reducer's behaviour. [Architecture: Repository tooling]
+
+## Final verification and recorded execution
+
+New CLI runs persist an execution manifest alongside the graph and policy. Pi manifests pin
+workspace, worker, resolved model, thinking and check profiles; resume uses recorded settings.
+The reducer moves accepted Pi runs into `verifying`. The host invokes `RunVerifier`, implemented
+by `WorkspaceVerifier`, after persisting that intent. The verifier stores final-tree check
+receipts; `run_verified` determines terminal status. Resume reruns an unfinished verification,
+and cancellation waits for cleanup. See [0014](decisions/0014-recorded-execution-and-final-verification.md).
 
 ## Limitations
 
@@ -212,8 +222,9 @@ reducer's behaviour. [Architecture: Repository tooling]
   there is no worker process, no broker, no supervisor and no SQLite yet (decisions 0008, 0012).
 - One workspace per run, no worktrees, no baseline capture and no merge step: `run --worker pi`
   edits the checkout in place (decision 0011).
-- While a host process is alive it has no lease timer: a session that never settles is only
-  interrupted by cancelling the run or restarting (decision 0008).
+- The session worker enforces a cooperative attempt timeout (30 minutes by default). A session
+  that ignores abort or setup I/O that never returns can still stall; retries wait for cleanup.
+  Process isolation and supervisor-enforced deadlines remain unimplemented (decision 0013).
 - The reducer handles one flat plan. Nested plans, run-wide budgets and suspension are planned
   extensions of the same reducer, not existing features. [Architecture: What runs today, Where
   new code goes]

@@ -131,7 +131,7 @@ export async function runInit(args: readonly string[]): Promise<number> {
   const config: ProjectConfig = {
     schemaVersion: 1,
     checks,
-    policy: { maxConcurrent: 2, maxAttemptsPerNode: 2, maxConcurrentWriters: 1 },
+    policy: { maxConcurrent: 1, maxAttemptsPerNode: 2, maxConcurrentWriters: 1 },
   };
   const plan: GraphSpec = {
     schemaVersion: 1,
@@ -146,14 +146,14 @@ export async function runInit(args: readonly string[]): Promise<number> {
         objective: "Describe the change you want here",
         acceptanceCriteria: ["State what must be true when the work is done"],
         ...(checkIds.length === 0 ? {} : { checks: checkIds }),
-        limits: { maxTokens: 200_000, maxToolCalls: 150 },
+        limits: { maxTokens: 200_000, maxToolCalls: 150, timeoutMs: 1_800_000 },
       },
       {
         id: "review",
         role: "reviewer",
         objective: "Review the implementation against its acceptance criteria",
         acceptanceCriteria: ["Every criterion of implement is judged with evidence"],
-        limits: { maxTokens: 100_000, maxToolCalls: 60 },
+        limits: { maxTokens: 100_000, maxToolCalls: 60, timeoutMs: 900_000 },
       },
     ],
     edges: [{ from: "implement", to: "review", condition: "result_ready" }],

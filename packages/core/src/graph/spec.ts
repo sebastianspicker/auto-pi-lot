@@ -29,9 +29,14 @@ export function isCheckerRole(role: Role): boolean {
   return CHECKER_ROLES.includes(role);
 }
 
+export const DEFAULT_ATTEMPT_TIMEOUT_MS = 1_800_000;
+export const MAX_ATTEMPT_TIMEOUT_MS = 86_400_000;
+
 export const NodeLimitsSchema = z.strictObject({
   maxTokens: positiveInteger,
   maxToolCalls: positiveInteger,
+  /** Wall-clock allowance including session setup, report repair and checks. Default: 30 minutes. */
+  timeoutMs: positiveInteger.max(MAX_ATTEMPT_TIMEOUT_MS).optional(),
   maxChildGraphs: z.number().int().nonnegative().optional(),
 });
 export type NodeLimits = z.infer<typeof NodeLimitsSchema>;

@@ -2,6 +2,7 @@ import {
   type ArtifactStore,
   type CheckProfile,
   type CodingSession,
+  DEFAULT_ATTEMPT_TIMEOUT_MS,
   digest,
   type EvidenceRecord,
   type EvidenceStore,
@@ -36,8 +37,6 @@ export const SYSTEM_PROMPT = [
 ].join("\n");
 
 export const USAGE_UNKNOWN_LIMITATION = "token usage was not reported for at least one call";
-export const TREE_CHANGED_LIMITATION =
-  "the workspace fingerprint changed during this attempt, although the role does not write; another attempt or a tool side effect changed the tree";
 export const CANCELLED_CHECK_NOTE = "[auto-pi-lot: check cancelled]";
 
 const LOG_TAIL_CHARS = 2000;
@@ -72,10 +71,12 @@ export interface SessionWorkerOptions {
 
 interface Attempt {
   cancelled: boolean;
+  timedOut: boolean;
   reported: boolean;
   session: CodingSession | null;
   /** Aborts a check that is running for this attempt. */
   readonly checks: AbortController;
+  completion: Promise<void>;
 }
 
 type Turn = "ok" | "budget" | "crashed";
@@ -100,22 +101,38 @@ export class SessionWorker implements WorkerPort {
 
   start(assignment: WorkerAssignment, report: (outcome: WorkerOutcome) => void): void {
     if (this.#attempts.has(assignment.attemptId)) return;
-    const attempt: Attempt = { cancelled: false, reported: false, session: null, checks: new AbortController() };
+    const attempt: Attempt = {
+      cancelled: false,
+      timedOut: false,
+      reported: false,
+      session: null,
+      checks: new AbortController(),
+      completion: Promise.resolve(),
+    };
     this.#attempts.set(assignment.attemptId, attempt);
+    const timeoutMs = assignment.node.limits.timeoutMs ?? DEFAULT_ATTEMPT_TIMEOUT_MS;
+    const timer = setTimeout(() => {
+      attempt.timedOut = true;
+      this.#say(`node ${assignment.nodeId}: deadline exceeded after ${timeoutMs} ms; aborting`);
+      attempt.checks.abort();
+      attempt.session?.abort().catch(() => undefined);
+    }, timeoutMs);
     const deliver = (outcome: WorkerOutcome): void => {
       if (attempt.reported) return;
       attempt.reported = true;
       // A finished attempt needs no bookkeeping; `start` ignores a repeated id through the host's own fencing.
       this.#attempts.delete(assignment.attemptId);
-      report(attempt.cancelled ? { type: "stopped" } : outcome);
+      report(attempt.cancelled ? { type: "stopped" } : attempt.timedOut ? failed("deadline_exceeded") : outcome);
     };
-    void (async () => {
+    attempt.completion = (async () => {
       let outcome: WorkerOutcome;
       try {
         outcome = await this.#run(assignment, attempt);
       } catch (error) {
         this.#say(`attempt ${assignment.attemptId} crashed: ${(error as Error).message}`);
         outcome = failed("worker_crashed");
+      } finally {
+        clearTimeout(timer);
       }
       deliver(outcome);
     })();
@@ -127,6 +144,13 @@ export class SessionWorker implements WorkerPort {
     attempt.cancelled = true;
     attempt.checks.abort();
     attempt.session?.abort().catch(() => undefined);
+  }
+
+  /** Stop every attempt and wait for sessions/checks to settle before releasing workspace ownership. */
+  async shutdown(): Promise<void> {
+    const pending = [...this.#attempts.entries()];
+    for (const [id] of pending) this.cancel(id);
+    await Promise.all(pending.map(([, attempt]) => attempt.completion));
   }
 
   #say(line: string): void {
@@ -173,6 +197,10 @@ export class SessionWorker implements WorkerPort {
         this.#say(`checker ${node.id} has no single candidate proposal to review`);
         return failed("policy_denied");
       }
+      if (candidate.resultRevision !== baseRevision) {
+        this.#say(`checker ${node.id}: workspace no longer matches the candidate revision`);
+        return failed("effect_uncertain");
+      }
     }
     const repair: RepairItem[] = [];
     for (const receiptId of assignment.repairOf?.receiptIds ?? []) {
@@ -189,6 +217,8 @@ export class SessionWorker implements WorkerPort {
     }
     const packet = buildTaskPacket({ assignment, checks: profiles, consumed, repair });
 
+    if (attempt.checks.signal.aborted) return { type: "stopped" };
+
     // 4. Open the session and watch it.
     const session = await this.#options.openSession({
       role: node.role,
@@ -199,7 +229,7 @@ export class SessionWorker implements WorkerPort {
     });
     attempt.session = session;
     try {
-      if (attempt.cancelled) return { type: "stopped" };
+      if (attempt.checks.signal.aborted) return { type: "stopped" };
 
       let toolCalls = 0;
       let tokens = 0;
@@ -288,7 +318,7 @@ export class SessionWorker implements WorkerPort {
       try {
         // 5. Run the session.
         let state = await turn(packet);
-        if (attempt.cancelled) return { type: "stopped" };
+        if (attempt.checks.signal.aborted) return { type: "stopped" };
         if (state === "budget") return failed("budget_exhausted");
         if (state === "crashed") return failed("worker_crashed");
 
@@ -296,7 +326,7 @@ export class SessionWorker implements WorkerPort {
         let parsed = parse();
         if (!parsed.ok) {
           state = await turn(contractReminder);
-          if (attempt.cancelled) return { type: "stopped" };
+          if (attempt.checks.signal.aborted) return { type: "stopped" };
           if (state === "budget") return failed("budget_exhausted");
           if (state === "crashed") return failed("worker_crashed");
           parsed = parse();
@@ -307,11 +337,14 @@ export class SessionWorker implements WorkerPort {
         }
         const report = parsed.value;
 
-        // 7. A non-writer should find the tree as it left it. Another attempt may have changed it
-        // meanwhile (decision 0011), so this is recorded on the proposal, not punished.
+        // 7. Read-only evidence is valid only while the observed source stays stable (decision 0013).
         const resultRevision = await fingerprint(this.#options.workspace);
+        if (attempt.checks.signal.aborted) return { type: "stopped" };
         const treeChanged = !isWriterRole(node.role) && resultRevision !== baseRevision;
-        if (treeChanged) this.#say(`node ${node.id}: the workspace changed during a ${node.role} attempt`);
+        if (treeChanged) {
+          this.#say(`node ${node.id}: the workspace changed during a ${node.role} attempt`);
+          return failed("effect_uncertain");
+        }
 
         // 8. Checks (writers) or the review receipt (checkers), recorded by the worker itself.
         const execute = this.#options.runCheck ?? runCheck;
@@ -344,7 +377,7 @@ export class SessionWorker implements WorkerPort {
           summary = `Review of ${candidate.nodeId}: ${count("pass")} pass, ${count("fail")} fail, ${count("unclear")} unclear`;
         } else if ("summary" in report) {
           for (const profile of profiles) {
-            if (attempt.cancelled) return { type: "stopped" };
+            if (attempt.checks.signal.aborted) return { type: "stopped" };
             const receipt = await execute(profile, {
               workspace: this.#options.workspace,
               runId: assignment.runId,
@@ -357,6 +390,10 @@ export class SessionWorker implements WorkerPort {
             await evidence.put(receipt);
             checkReceiptIds.push(receipt.id);
             this.#say(`check ${profile.id}: ${receipt.outcome}`);
+            if ((await fingerprint(this.#options.workspace)) !== resultRevision) {
+              this.#say(`node ${node.id}: workspace changed during check ${profile.id}; evidence cannot be accepted`);
+              return failed("effect_uncertain");
+            }
           }
           summary = report.summary;
           claims = report.claims;
@@ -365,11 +402,8 @@ export class SessionWorker implements WorkerPort {
         }
 
         // 9. The proposal.
-        const limitations = [
-          ...report.limitations,
-          ...(usageUnknown ? [USAGE_UNKNOWN_LIMITATION] : []),
-          ...(treeChanged ? [TREE_CHANGED_LIMITATION] : []),
-        ];
+        if (attempt.checks.signal.aborted) return { type: "stopped" };
+        const limitations = [...report.limitations, ...(usageUnknown ? [USAGE_UNKNOWN_LIMITATION] : [])];
         const proposal = identifyEvidence<ResultProposal>({
           kind: "proposal",
           schemaVersion: 1,

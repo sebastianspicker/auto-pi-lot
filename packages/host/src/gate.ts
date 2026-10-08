@@ -207,7 +207,7 @@ export class EvidenceGate implements AcceptanceGate {
         reasons.push(`required check ${profile} has no receipt for attempt ${request.attemptId}`);
         continue;
       }
-      if (proposal.resultRevision !== undefined && latest.sourceDigest !== proposal.resultRevision) {
+      if (proposal.resultRevision === undefined || latest.sourceDigest !== proposal.resultRevision) {
         failed = true;
         reasons.push(
           `receipt ${latest.id} checked tree ${latest.sourceDigest}, proposal is ${proposal.resultRevision}`,

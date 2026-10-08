@@ -1,7 +1,13 @@
 import { open, readdir } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 
-import { type JournalEvent, parseJournalEvent, type RunStatus, replay } from "@auto-pi-lot/core";
+import {
+  type JournalEvent,
+  parseJournalEvent,
+  type RunStatus,
+  type RunVerificationResult,
+  replay,
+} from "@auto-pi-lot/core";
 import { FileJournalStore, MAX_RECORD_BYTES } from "@auto-pi-lot/host";
 
 import { parseFlags } from "./args.js";
@@ -27,6 +33,8 @@ export function parseStatusArgs(
 }
 
 export interface RunListing {
+  readonly worker: "fake" | "pi" | null;
+  readonly verification: RunVerificationResult | null;
   readonly runId: string;
   readonly status: RunStatus;
   readonly startedAt: string;
@@ -85,6 +93,8 @@ async function listing(
     }
     const last = stored.events.at(-1) ?? first;
     return {
+      worker: first.type === "run_started" ? (first.execution?.worker ?? null) : null,
+      verification: replayed.state.verification,
       runId: first.runId,
       status: replayed.state.status,
       startedAt: first.at,

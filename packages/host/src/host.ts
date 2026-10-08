@@ -6,6 +6,7 @@ import {
   type Command,
   type DispatchCommand,
   decide,
+  type ExecutionManifest,
   type GraphSpec,
   initialState,
   type JournalEvent,
@@ -19,6 +20,8 @@ import {
   type RunPolicy,
   type RunState,
   type RunStatus,
+  RunVerificationResultSchema,
+  type RunVerifier,
   replay,
   type ValidationIssue,
   validateGraph,
@@ -31,6 +34,7 @@ export interface HostPorts {
   readonly journal: JournalStore;
   readonly worker: WorkerPort;
   readonly gate: AcceptanceGate;
+  readonly verifier?: RunVerifier;
   /** Host-owned time and ids; injectable so tests are deterministic. Defaults: `new Date()` and `crypto.randomUUID()`. */
   readonly clock?: () => Date;
   readonly newEventId?: () => string;
@@ -170,7 +174,14 @@ export class RunHost {
   }
 
   /** Admits a new run: validates the graph, persists `run_started`, then drives the run. */
-  static async start(ports: HostPorts, graph: GraphSpec, policy: RunPolicy): Promise<RunHost> {
+  static async start(
+    ports: HostPorts,
+    graph: GraphSpec,
+    policy: RunPolicy,
+    execution?: ExecutionManifest,
+  ): Promise<RunHost> {
+    if (policy.requireFinalVerification && ports.verifier === undefined)
+      throw new Error("Final verification requires a verifier");
     const validated = validateGraph(graph);
     if (!validated.ok) {
       throw new Error(`Invalid graph: ${validated.issues.map((issue) => issue.message).join("; ")}`);
@@ -179,7 +190,12 @@ export class RunHost {
     const existing = await ports.journal.read(runId);
     if (existing.events.length > 0) throw new Error(`Run ${runId} already has a journal; use RunHost.resume`);
     const host = new RunHost(ports, runId, [], initialState(), { tornTail: false });
-    const result = await host.submit({ type: "run_started", graph: validated.graph, policy });
+    const result = await host.submit({
+      type: "run_started",
+      graph: validated.graph,
+      policy,
+      ...(execution === undefined ? {} : { execution }),
+    });
     if (!result.applied) {
       const why =
         result.reason === "rejected"
@@ -194,6 +210,12 @@ export class RunHost {
   static async resume(ports: HostPorts, runId: string): Promise<RunHost> {
     const stored = await ports.journal.read(runId);
     const replayed = replay(stored.events);
+    if (
+      completionOf(replayed.state.status) === null &&
+      replayed.state.policy?.requireFinalVerification &&
+      ports.verifier === undefined
+    )
+      throw new Error("Final verification requires a verifier");
     if (replayed.rejections.length > 0) throw new JournalReplayError(runId, replayed.rejections);
     if (stored.events.length === 0) throw new Error(`No journal found for run ${runId}`);
     const host = new RunHost(ports, runId, stored.events, replayed.state, { tornTail: stored.tornTail });
@@ -395,7 +417,23 @@ export class RunHost {
       case "complete_run":
         this.#resolveCompletion(command.status);
         return;
+      case "verify_run":
+        return this.#verifyRun();
+      case "cancel_verification":
+        this.#ports.verifier?.cancel();
+        return;
     }
+  }
+
+  async #verifyRun(): Promise<void> {
+    if (!this.#state.verificationRequested) return;
+    const verifier = this.#ports.verifier;
+    if (verifier === undefined) throw new Error("Final verification requires a verifier");
+    if (this.#state.status === "cancelling") verifier.cancel();
+    const result = parseDto(RunVerificationResultSchema, await verifier.verify(this.#runId));
+    if (!result.ok) throw new Error("Final verifier returned an invalid result");
+    const applied = await this.submit({ type: "run_verified", result: result.value });
+    if (!applied.applied) throw new Error("Final verification result was refused");
   }
 
   /** Persist the dispatch intent; only when that event applied does the worker start. */
@@ -511,6 +549,7 @@ export class RunHost {
     }
 
     const commands: Command[] = [];
+    if (replayed.verificationRequested) commands.push({ type: "verify_run" });
     for (const [nodeId, node] of Object.entries(replayed.nodes)) {
       if (node.execution === "ready" && node.reservedAttemptId !== null && node.reservedFencingToken !== null) {
         commands.push({

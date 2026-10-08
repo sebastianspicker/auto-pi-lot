@@ -1,5 +1,6 @@
 import type { ValidatedGraph } from "../graph/validate.js";
 import type { RunPolicy } from "./events.js";
+import type { RunVerificationResult } from "./execution.js";
 import type { ExecutionState, FailureCategory, ResultDisposition } from "./status.js";
 
 /**
@@ -7,7 +8,7 @@ import type { ExecutionState, FailureCategory, ResultDisposition } from "./statu
  * dimension is `null` rather than an omitted key, so `canonicalJson`/`deepEqual` compare two
  * states structurally instead of tripping over `undefined` vs. missing properties.
  */
-export type RunStatus = "not_started" | "running" | "cancelling" | "succeeded" | "failed" | "cancelled";
+export type RunStatus = "not_started" | "running" | "verifying" | "cancelling" | "succeeded" | "failed" | "cancelled";
 
 /**
  * An attempt holds a run permit while `dispatched` or `stopping`; `result_ready` released
@@ -81,6 +82,9 @@ export interface NodeRunState {
 }
 
 export interface RunState {
+  readonly finalCheckIds: readonly string[];
+  readonly verificationRequested: boolean;
+  readonly verification: RunVerificationResult | null;
   readonly runId: string | null;
   readonly status: RunStatus;
   readonly graph: ValidatedGraph | null;
@@ -111,6 +115,9 @@ export function freshNodeState(): NodeRunState {
 /** The state before any `run_started` event has been applied. */
 export function initialState(): RunState {
   return {
+    finalCheckIds: [],
+    verificationRequested: false,
+    verification: null,
     runId: null,
     status: "not_started",
     graph: null,

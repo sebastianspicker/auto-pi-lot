@@ -22,17 +22,8 @@ site/trace.json.tmp
 /AGENTS.md
 /DESIGN_BRIEF.md
 /docs/implementation-ledger.json
-/docs/decisions/
 /docs/archive/scaffold-handoff.md
-/packages/cli/test/
-/packages/core/test/
-/packages/host/test/
-/packages/pi/test/
-/packages/worker/test/
-/scripts/test/
-/scripts/check-ledger.ts
 /scripts/stop-hook.sh
-/tsconfig.test.json
 .DS_Store
 .idea/
 .vscode/

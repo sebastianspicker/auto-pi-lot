@@ -165,6 +165,13 @@ class TailBuffer {
       this.#size -= first.length;
       this.#dropped += first.length;
     }
+    const first = this.#chunks[0];
+    if (first !== undefined && this.#size > this.#limit) {
+      const excess = this.#size - this.#limit;
+      this.#chunks[0] = Buffer.from(first.subarray(excess));
+      this.#size -= excess;
+      this.#dropped += excess;
+    }
   }
 
   toBytes(): Buffer {
@@ -273,6 +280,7 @@ function execute(profile: CheckProfile, context: ExecuteContext): Promise<Finish
     let exit: Finished | null = null;
     let timer: NodeJS.Timeout | undefined;
     let grace: NodeJS.Timeout | undefined;
+    let groupKilled = false;
 
     const settle = (result: Finished): void => {
       if (settled) return;
@@ -280,12 +288,12 @@ function execute(profile: CheckProfile, context: ExecuteContext): Promise<Finish
       clearTimeout(timer);
       clearTimeout(grace);
       context.abort?.removeEventListener("abort", onAbort);
+      killGroup();
       resolve(result);
     };
     const settleAfterGrace = (result: Finished): void => {
       clearTimeout(grace);
       grace = setTimeout(() => settle(result), CLOSE_GRACE_MS);
-      grace.unref();
     };
 
     let child: ChildLike;
@@ -318,13 +326,17 @@ function execute(profile: CheckProfile, context: ExecuteContext): Promise<Finish
     };
     child.on("exit", (code) => {
       exit = result(code);
+      // A successful parent can leave background writers behind. End their lifetime with the check.
+      killGroup();
       settleAfterGrace(exit);
     });
     child.on("close", (code) => {
-      settle(timedOut ? result(code) : (exit ?? result(code)));
+      settle(timedOut || cancelled ? result(code) : (exit ?? result(code)));
     });
 
     const killGroup = (): void => {
+      if (groupKilled) return;
+      groupKilled = true;
       try {
         if (detached && child.pid !== undefined) context.signal(-child.pid, "SIGKILL");
         else child.kill("SIGKILL");
@@ -353,5 +365,6 @@ function execute(profile: CheckProfile, context: ExecuteContext): Promise<Finish
       settleAfterGrace({ outcome: "error", exitCode: null });
     }
     context.abort?.addEventListener("abort", onAbort, { once: true });
+    if (context.abort?.aborted) onAbort();
   });
 }

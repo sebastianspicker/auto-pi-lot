@@ -77,6 +77,11 @@ export async function runInspect(args: readonly string[]): Promise<number> {
         runId,
         status: state.status,
         policy: state.policy,
+        execution: stored.events[0]?.type === "run_started" ? (stored.events[0].execution ?? null) : null,
+        verification: state.verification,
+        finalChecks: records.filter(
+          (record) => record.kind === "check" && (state.verification?.checkReceiptIds.includes(record.id) ?? false),
+        ),
         tornTail: stored.tornTail,
         nodes: summarizeNodes(state),
         attempts: summarizeAttempts(state),

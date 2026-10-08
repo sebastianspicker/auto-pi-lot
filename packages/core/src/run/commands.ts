@@ -43,4 +43,10 @@ export interface CompleteRunCommand {
   readonly status: RunCompletionStatus;
 }
 
-export type Command = DispatchCommand | EvaluateAcceptanceCommand | CancelAttemptCommand | CompleteRunCommand;
+export type Command =
+  | DispatchCommand
+  | EvaluateAcceptanceCommand
+  | CancelAttemptCommand
+  | CompleteRunCommand
+  | { readonly type: "verify_run" }
+  | { readonly type: "cancel_verification" };

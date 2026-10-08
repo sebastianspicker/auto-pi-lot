@@ -62,6 +62,8 @@ export function summarizeEvent(event: JournalEvent, index: number): EventSummary
       return { ...base, reason: event.reason };
     case "attempt_stopped":
       return { ...base, attemptId: event.attemptId };
+    case "run_verified":
+      return { ...base, receiptIds: event.result.checkReceiptIds, reason: event.result.outcome };
   }
 }
 

@@ -1,0 +1,72 @@
+[
+  {
+    "name": "null",
+    "input": null,
+    "canonical": "null",
+    "digest": "sha256:74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b"
+  },
+  {
+    "name": "boolean-true",
+    "input": true,
+    "canonical": "true",
+    "digest": "sha256:b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b"
+  },
+  {
+    "name": "number-integer",
+    "input": 42,
+    "canonical": "42",
+    "digest": "sha256:73475cb40a568e8da8a045ced110137e159f890ac4da883b6b17dc651b3a8049"
+  },
+  {
+    "name": "negative-zero",
+    "input": -0,
+    "canonical": "0",
+    "digest": "sha256:5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+  },
+  {
+    "name": "unicode-string",
+    "input": "héllo wörld 😀",
+    "canonical": "\"héllo wörld 😀\"",
+    "digest": "sha256:fe7c35a8b49f7584a41f0dd92d3dea1fa855f64af1b9895e372312a5dd5aaa3c"
+  },
+  {
+    "name": "nested-object-key-order",
+    "input": {
+      "b": 1,
+      "a": 2
+    },
+    "canonical": "{\"a\":2,\"b\":1}",
+    "digest": "sha256:d3626ac30a87e6f7a6428233b3c68299976865fa5508e4267c5415c76af7a772"
+  },
+  {
+    "name": "empty-object",
+    "input": {},
+    "canonical": "{}",
+    "digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  },
+  {
+    "name": "empty-array",
+    "input": [],
+    "canonical": "[]",
+    "digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+  },
+  {
+    "name": "mixed-array",
+    "input": [1, "two", null, true],
+    "canonical": "[1,\"two\",null,true]",
+    "digest": "sha256:7b8032fffebbc32932bc49ec84cf4527e973466f623f05770de7f39d2b66af65"
+  },
+  {
+    "name": "deeply-nested",
+    "input": {
+      "z": {
+        "y": {
+          "x": 1
+        }
+      },
+      "a": [1, 2, 3]
+    },
+    "canonical": "{\"a\":[1,2,3],\"z\":{\"y\":{\"x\":1}}}",
+    "digest": "sha256:93eea12ef43d5785b43b78f314fc16d12353453e86027887462fe68320b56791"
+  }
+]
