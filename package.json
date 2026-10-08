@@ -26,8 +26,8 @@
     "site": "npm run build && node packages/cli/dist/index.js trace > site/trace.json.tmp && mv site/trace.json.tmp site/trace.json"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.14",
-    "@types/node": "22.20.4",
+    "@biomejs/biome": "2.5.15",
+    "@types/node": "22.20.5",
     "tsx": "4.23.15",
     "typescript": "7.0.2",
     "zod": "4.6.5"
