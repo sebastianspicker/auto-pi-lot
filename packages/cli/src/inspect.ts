@@ -1,3 +1,4 @@
+import { lstat } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { replay } from "@auto-pi-lot/core";
@@ -5,7 +6,7 @@ import { FileEvidenceStore, FileJournalStore } from "@auto-pi-lot/host";
 
 import { parseFlags } from "./args.js";
 import { summarizeEvidence } from "./evidence-summary.js";
-import { runtimePaths } from "./paths.js";
+import { runtimePaths, sessionDirFor } from "./paths.js";
 import { attemptNodes, summarizeAttempts, summarizeEvent, summarizeNodes } from "./summary.js";
 
 export const INSPECT_USAGE = "Usage: auto-pi-lot inspect <runId> [--workspace <dir>] [--journal <dir>]";
@@ -70,6 +71,11 @@ export async function runInspect(args: readonly string[]): Promise<number> {
     console.error(error instanceof Error ? error.message : String(error));
     return 2;
   }
+  const sessionDir = sessionDirFor(paths, runId);
+  const sessions = await lstat(sessionDir).then(
+    (stats) => (stats.isDirectory() ? sessionDir : null),
+    () => null,
+  );
   console.log(
     JSON.stringify(
       {
@@ -83,6 +89,7 @@ export async function runInspect(args: readonly string[]): Promise<number> {
           (record) => record.kind === "check" && (state.verification?.checkReceiptIds.includes(record.id) ?? false),
         ),
         tornTail: stored.tornTail,
+        sessions,
         nodes: summarizeNodes(state),
         attempts: summarizeAttempts(state),
         events: stored.events.map(summarizeEvent),

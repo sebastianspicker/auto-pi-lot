@@ -26,6 +26,7 @@ Other useful commands:
 | --- | --- |
 | `npm run format` | Apply Biome formatting and safe fixes |
 | `npm test` | Run unit and integration tests (build first) |
+| `npm run clean` | Remove build output and TypeScript's incremental state. If you delete `dist/` by hand, run this before `npm run build`, or the build sees nothing to do and emits nothing |
 | `npm run test:types` | Type-check the tests |
 | `npm run sim` | Run the seeded reducer simulation over 2000 seeds |
 | `npm run demo` | Print the example graph, its topological order and its ready nodes |

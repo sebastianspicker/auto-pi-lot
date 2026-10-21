@@ -3,7 +3,7 @@ import { join, resolve } from "node:path";
 
 import type { CheckReceipt } from "@auto-pi-lot/core";
 import { FileArtifactStore } from "@auto-pi-lot/host";
-import { fingerprintWorkspace, runCheck } from "@auto-pi-lot/worker";
+import { createFingerprintCache, fingerprintWorkspace, runCheck } from "@auto-pi-lot/worker";
 
 import { parseFlags } from "./args.js";
 import { loadConfig } from "./config.js";
@@ -54,7 +54,8 @@ export async function runChecks(args: readonly string[]): Promise<number> {
   process.on("SIGINT", cancel);
   process.on("SIGTERM", cancel);
   try {
-    const sourceDigest = await fingerprintWorkspace(workspace);
+    const fingerprintCache = createFingerprintCache();
+    const sourceDigest = await fingerprintWorkspace(workspace, { cache: fingerprintCache });
     const artifacts = new FileArtifactStore(paths.artifacts);
     const runId = `check-${randomUUID()}`;
     const receipts: CheckReceipt[] = [];
@@ -72,10 +73,10 @@ export async function runChecks(args: readonly string[]): Promise<number> {
       });
       receipts.push(receipt);
       console.error(`${profile.id}: ${receipt.outcome}`);
-      sourceChanged = sourceDigest !== (await fingerprintWorkspace(workspace));
+      sourceChanged = sourceDigest !== (await fingerprintWorkspace(workspace, { cache: fingerprintCache }));
       if (sourceChanged) break;
     }
-    sourceChanged ||= sourceDigest !== (await fingerprintWorkspace(workspace));
+    sourceChanged ||= sourceDigest !== (await fingerprintWorkspace(workspace, { cache: fingerprintCache }));
     const ok = !controller.signal.aborted && !sourceChanged && receipts.every((receipt) => receipt.outcome === "pass");
     console.log(
       JSON.stringify(

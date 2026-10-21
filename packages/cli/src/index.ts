@@ -11,6 +11,14 @@ import { runValidate, VALIDATE_USAGE } from "./validate.js";
 
 const USAGE = "Usage: auto-pi-lot <demo|trace|validate|run|init|check|inspect|status|artifact> [options]";
 
+// A closed stdout or stderr (the parent process exited, or output piped into `head`) must not
+// kill a run halfway: it would skip cleanup and leave its ownership locks behind.
+for (const stream of [process.stdout, process.stderr]) {
+  stream.on("error", (error: NodeJS.ErrnoException) => {
+    if (error.code !== "EPIPE") throw error;
+  });
+}
+
 const command = process.argv[2];
 const handlers: Record<string, (args: readonly string[]) => Promise<number>> = {
   validate: runValidate,

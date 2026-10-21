@@ -57,7 +57,8 @@ and does not load model credentials. `modelReadiness: "not_checked"` means provi
 has not been tested; an omitted model remains `null` until Pi resolves it. Thinking defaults to `off`.
 
 To execute, configure Pi credentials (`pi` login or provider environment variables), work on a
-branch whose changes you can review, and run:
+branch whose changes you can review, and run the following. Pi runs (including `--dry-run`)
+require the workspace to be inside a git repository.
 
 ```sh
 auto-pi-lot run --worker pi --graph auto-pi-lot.plan.json
@@ -66,14 +67,27 @@ auto-pi-lot inspect <runId>
 auto-pi-lot artifact <logArtifactId>
 ```
 
-Progress goes to stderr; the final structured JSON report goes to stdout. `--quiet` suppresses
+Progress goes to stderr; the final structured JSON report goes to stdout. When a task's result
+is rejected, the progress lines say why: a failed check, or a review that failed or left a
+criterion unclear. An unclear verdict counts as a failed attempt, so write concrete criteria. `--quiet` suppresses
 progress. Exit 0 means success; failed or cancelled runs exit 1. Journal replay or evidence
 integrity failures may exit 2. Use `auto-pi-lot <command> --help` for syntax.
+
+From inside Pi, start Pi in your project with
+`pi --extension <auto-pi-lot clone>/packages/pi/dist/extension.js` and use
+`/graph run <plan>`, `/graph cancel`, `/graph resume <runId>`, `/graph status` and
+`/graph inspect <runId>`. They drive the same command-line tool as a child process; see
+[`packages/pi`](packages/pi/README.md).
 
 ## Configure checks and limits
 
 Check commands are executable/argument pairs, without a shell. They run under an environment
-allowlist and a timeout; provider API keys are not inherited through the environment. They
+allowlist and a timeout; provider API keys are not inherited through the environment. Commands
+the model runs with its `bash` tool get the same allowlisted environment (`PATH`, `HOME`, locale,
+shell and temporary-directory variables, plus `CI=1`, `NO_COLOR=1` and `FORCE_COLOR=0`).
+Anything else, such as `SSH_AUTH_SOCK` or proxy settings, is not passed on. This keeps exported API keys out of the model's
+shell. It is not a sandbox: the model can still read any file your user can, including Pi's
+credential store. They
 still have your operating system user's file access. Only use commands and repositories you trust.
 
 ```json
@@ -105,12 +119,29 @@ report repair, and checks. At expiry the worker requests cancellation, kills a r
 process group on POSIX, and records `deadline_exceeded` after cleanup. An in-process SDK that
 ignores cancellation can still stall; a replacement never starts while that attempt is active.
 Token enforcement uses provider-reported usage; missing usage is recorded as unknown.
+`maxTokens` is the sum, over every model call in the attempt, of the input and output tokens the
+provider reports. Each call re-sends the conversation so far, so without prompt caching the total
+grows much faster than the number of tool calls; cached input that the provider reports
+separately is not counted. `init` starts the implementer at 1,000,000 and the reviewer at
+500,000; an attempt that stops with `budget_exhausted` needs a higher limit or a smaller task.
 
 Pin a model in config with `"model": { "provider": "…", "id": "…" }` or pass
 `--model <provider/id>`. `--thinking off|low|medium|high` overrides the configured thinking level.
 Limits on tokens and retries are not a monetary spending guarantee.
 
 ## Execution and recovery
+
+Before the first attempt of a new Pi run, auto-pi-lot records a **restore point**. It is a commit
+of the files in the git repository that contains the workspace, kept under
+`refs/auto-pi-lot/restore/<runId>`. It includes uncommitted changes and untracked files that are
+not ignored. It leaves out `.auto-pi-lot/`, and records submodules only as their commit, not
+their files. HEAD, the index and your files are not
+touched, and no hooks run. If the tree had uncommitted changes, the run warns and edits on top
+of them. `run` prints the ref and reports it as `restorePoint`. To bring files back to that
+state, run `git restore --source=refs/auto-pi-lot/restore/<runId> --worktree -- .` at the
+repository root yourself. Files the run created are not removed by that; check `git status`.
+auto-pi-lot never restores anything on its own. Delete old restore points with
+`git update-ref -d <ref>`.
 
 Real runs execute **one attempt at a time**. Checks and reviewers must not read a workspace
 another task is editing. `maxConcurrent` and `maxConcurrentWriters` must both be 1 for Pi;
@@ -140,15 +171,22 @@ auto-pi-lot run --worker pi --resume <runId>
 ```
 
 Resume replays the journal and reconciles interrupted attempts. It requires an explicit worker
-kind. Every new plan execution needs a fresh `runId`; resume does not restart terminal runs.
+kind. Every new plan execution needs a fresh run ID: pass `--run-id <id>` to start the same plan
+again without editing it. Resume does not restart terminal runs.
 The first event freezes the worker, canonical workspace, resolved model, thinking level and
 check commands. Resume uses that recipe even if the current config changes; `--config` and
 conflicting overrides are refused. Interrupted final checks rerun. Completed runs need no
 provider credentials. Legacy journals without an execution manifest remain inspectable, but
-need a new run ID to execute with this version. The manifest does not snapshot source,
+need a new run ID (`--run-id`) to execute with this version. The manifest does not snapshot source,
 dependencies or the environment.
 
-Keep `.auto-pi-lot/` out of Git; it contains journals, evidence, and check logs. A custom Pi
+Keep `.auto-pi-lot/` out of Git; it contains journals, evidence, check logs, and session
+transcripts. Each Pi attempt writes Pi's own JSONL transcript (prompts, model messages, tool
+calls and their output, errors, and token usage) to
+`.auto-pi-lot/sessions/run-<runId>/<timestamp>_sha256-<hex>.jsonl`, where `sha256:<hex>` is the
+attempt ID (progress lines show its first 12 hex digits); `run` and `inspect` print the
+directory as `sessions`. Use it to see what a failed attempt did. A transcript holds everything
+the model read or printed, so review it before sharing. A custom Pi
 journal must be outside the workspace or under `.auto-pi-lot/` so its writes do not change the
 source fingerprint.
 

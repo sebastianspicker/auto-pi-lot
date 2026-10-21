@@ -52,6 +52,7 @@ test("run journals the example graph to a file, retries the scripted crash and s
 
   const resumed = run("run", "--journal", dir, "--worker", "fake", "--resume", output.runId);
   assert.equal(resumed.status, 0, resumed.stderr);
+  assert.match(resumed.stderr, /SIMULATED/);
   const again = JSON.parse(resumed.stdout);
   assert.equal(again.resumed, true);
   assert.equal(again.finalStatus, "succeeded");
@@ -158,7 +159,19 @@ test("run --graph executes a graph file under the given policy and refuses to st
     ),
   );
   const dir = await mkdtemp(join(tmpdir(), "auto-pi-lot-run-"));
-  const args = ["run", "--graph", file, "--journal", dir, "--max-concurrent", "1", "--max-attempts", "1"];
+  const args = [
+    "run",
+    "--worker",
+    "fake",
+    "--graph",
+    file,
+    "--journal",
+    dir,
+    "--max-concurrent",
+    "1",
+    "--max-attempts",
+    "1",
+  ];
   const result = run(...args);
   assert.equal(result.status, 0, result.stderr);
   const output = JSON.parse(result.stdout);
@@ -171,6 +184,45 @@ test("run --graph executes a graph file under the given policy and refuses to st
   const again = run(...args);
   assert.equal(again.status, 1);
   assert.match(again.stderr, /resume/);
+});
+
+test("run --graph requires an explicit worker, and a fake run of a plan warns that it is simulated even when quiet", async () => {
+  const file = await writeGraph(graphOf(`sim-${process.pid}-${Date.now()}`, [node("a", "implementer")], []));
+  const dir = await mkdtemp(join(tmpdir(), "auto-pi-lot-run-"));
+  const implicit = run("run", "--graph", file, "--journal", dir);
+  assert.equal(implicit.status, 1);
+  assert.match(implicit.stderr, /--graph requires --worker pi .* or --worker fake/);
+  assert.match(implicit.stderr, /Usage: auto-pi-lot run/);
+  assert.equal(implicit.stdout, "");
+
+  const simulated = run("run", "--worker", "fake", "--graph", file, "--journal", dir, "--quiet");
+  assert.equal(simulated.status, 0, simulated.stderr);
+  assert.match(simulated.stderr, /SIMULATED/);
+  assert.equal(JSON.parse(simulated.stdout).worker, "fake");
+});
+
+test("run --run-id starts the same plan again under a new run id, and is refused where it cannot apply", async () => {
+  const planRunId = `rerun-${process.pid}-${Date.now()}`;
+  const file = await writeGraph(graphOf(planRunId, [node("a", "implementer")], []));
+  const dir = await mkdtemp(join(tmpdir(), "auto-pi-lot-run-"));
+  const base = ["run", "--worker", "fake", "--graph", file, "--journal", dir, "--quiet"];
+  assert.equal(run(...base).status, 0);
+
+  const taken = run(...base);
+  assert.equal(taken.status, 1);
+  assert.match(taken.stderr, new RegExp(`--resume ${planRunId}.*--run-id`));
+
+  const again = run(...base, "--run-id", `${planRunId}-2`);
+  assert.equal(again.status, 0, again.stderr);
+  assert.equal(JSON.parse(again.stdout).runId, `${planRunId}-2`);
+  assert.equal(run(...base, "--run-id", `${planRunId}-2`).status, 1);
+
+  const blank = run(...base, "--run-id", "   ");
+  assert.equal(blank.status, 1);
+  assert.match(blank.stdout, /runId/);
+  const withResume = run("run", "--worker", "fake", "--resume", planRunId, "--run-id", "x", "--journal", dir);
+  assert.equal(withResume.status, 1);
+  assert.match(withResume.stderr, /--run-id requires --graph/);
 });
 
 test("run --graph cannot be combined with --resume", () => {
@@ -216,6 +268,25 @@ test("run --worker pi refuses a plan naming an unknown check profile before open
   const result = run("run", "--worker", "pi", "--graph", file, "--workspace", workspace, "--quiet");
   assert.equal(result.status, 1);
   assert.equal(JSON.parse(result.stdout).issues[0].code, "unknown_check_profile");
+});
+
+test("run --worker pi refuses a workspace that is not a git repository, even for a dry run", async () => {
+  const workspace = await tempDir();
+  const file = await writeGraph(
+    graphOf(
+      "run-no-git",
+      [node("a", "implementer"), node("b", "reviewer")],
+      [{ from: "a", to: "b", condition: "result_ready" }],
+    ),
+  );
+  for (const extra of [[], ["--dry-run"]]) {
+    const result = run("run", "--worker", "pi", "--graph", file, "--workspace", workspace, ...extra);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /not a git repository/);
+  }
+  assert.equal(spawnSync("git", ["init", "-q", workspace]).status, 0);
+  const preview = run("run", "--worker", "pi", "--graph", file, "--workspace", workspace, "--dry-run");
+  assert.equal(preview.status, 0, preview.stderr);
 });
 
 test("run --worker pi refuses lint warnings before opening a session", async () => {
@@ -270,6 +341,10 @@ test("init writes a config and a plan that pass the validators, and refuses to o
   assert.ok(validated.ok);
   assert.deepEqual(validateGraphChecks(validated.graph, config.value.checks), []);
   assert.deepEqual(lintGraph(validated.graph), []);
+  // Each call's input re-sends the context, so the token limit must leave room for many tool calls.
+  const limits = Object.fromEntries(validated.graph.nodes.map((entry) => [entry.id, entry.limits]));
+  assert.equal(limits.implement?.maxTokens, 1_000_000);
+  assert.equal(limits.review?.maxTokens, 500_000);
 
   const again = run("init", "--workspace", workspace);
   assert.equal(again.status, 1);
@@ -312,6 +387,16 @@ test("status and inspect read the journal of a finished run; artifact reports un
   assert.equal(run("inspect", "no-such-run", "--workspace", workspace).status, 1);
   assert.equal(run("inspect", "--workspace", workspace).status, 1);
   assert.equal(run("artifact", `sha256:${"0".repeat(64)}`, "--workspace", workspace).status, 1);
+});
+
+test("inspect names a run's session transcript directory once it exists", async () => {
+  const workspace = await realpath(await tempDir());
+  const ran = JSON.parse(run("run", "--workspace", workspace, "--quiet").stdout);
+  assert.equal(JSON.parse(run("inspect", ran.runId, "--workspace", workspace).stdout).sessions, null);
+
+  const sessions = join(workspace, ".auto-pi-lot", "sessions", `run-${encodeRunId(ran.runId)}`);
+  await mkdir(sessions, { recursive: true });
+  assert.equal(JSON.parse(run("inspect", ran.runId, "--workspace", workspace).stdout).sessions, sessions);
 });
 
 test("status on a missing journal directory lists no runs, and reports a corrupt journal in its entry", async () => {

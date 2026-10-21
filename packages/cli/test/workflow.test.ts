@@ -20,6 +20,7 @@ test("command help succeeds without starting work", () => {
 test("init → dry-run previews a real plan without model configuration or filesystem changes", async (t) => {
   const workspace = await mkdtemp(join(tmpdir(), "apl-preview-"));
   t.after(() => rm(workspace, { recursive: true, force: true }));
+  assert.equal(spawnSync("git", ["init", "-q", workspace]).status, 0, "Pi runs need a git workspace");
   assert.equal(run("init", "--workspace", workspace).status, 0);
   const before = await readdir(workspace);
   const args = [
@@ -185,4 +186,27 @@ test("a check that edits source is not a passing baseline", async (t) => {
   const output = JSON.parse(result.stdout);
   assert.equal(output.sourceChanged, true);
   assert.equal(output.ok, false);
+});
+
+test("a run whose output pipes close (its parent went away) still finishes and releases its locks", async (t) => {
+  const workspace = await mkdtemp(join(tmpdir(), "apl-epipe-"));
+  t.after(() => rm(workspace, { recursive: true, force: true }));
+  const child = spawn(process.execPath, [entry, "run", "--workspace", workspace], {
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  child.stderr.once("data", () => {
+    child.stderr.destroy();
+    child.stdout.destroy();
+  });
+  const code = await new Promise<number | null>((resolve) => child.on("close", resolve));
+  assert.equal(code, 0);
+  const journal = join(workspace, ".auto-pi-lot", "journal");
+  assert.deepEqual(
+    (await readdir(journal)).filter((name) => name.endsWith(".lock")),
+    [],
+    "no writer lock is left behind",
+  );
+  const status = run("status", "--workspace", workspace);
+  assert.equal(status.status, 0, status.stderr);
+  assert.equal(JSON.parse(status.stdout).runs[0]?.status, "succeeded");
 });

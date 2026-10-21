@@ -27,7 +27,7 @@ Local composition entry point and the operator's command line. `demo`, `trace`, 
 ## run
 
 ```
-auto-pi-lot run [--graph <file> | --resume <runId>] [--worker fake|pi] [--workspace <dir>]
+auto-pi-lot run [--graph <file> [--run-id <id>] | --resume <runId>] [--worker fake|pi] [--workspace <dir>]
   [--config <file>] [--model <provider/id>] [--thinking off|low|medium|high] [--journal <dir>]
   [--max-concurrent <n>] [--max-attempts <n>] [--max-writers <n>] [--allow-warnings] [--quiet] [--dry-run]
 ```
@@ -35,17 +35,23 @@ auto-pi-lot run [--graph <file> | --resume <runId>] [--worker fake|pi] [--worksp
 (`npm run fake-run` is `run` with no arguments.) Executes the example graph, or the plan in
 `--graph`, end to end through `RunHost` from `@auto-pi-lot/host`, or resumes a run from its
 journal by replay and reconciles whatever was still open (decision 0008). Every applied event is
-appended to `<journal>/run-<encoded runId>.jsonl` before the host acts on it. `--graph` and
-`--resume` cannot be combined; the limit flags are rejected with `--resume` (the journal records
+appended to `<journal>/run-<encoded runId>.jsonl` before the host acts on it. `--run-id <id>`
+replaces the plan's `runId`, so the same plan file can start another run without editing it; it
+requires `--graph`. `--graph` and `--resume` cannot be combined; the limit flags are rejected with `--resume` (the journal records
 the policy). A resume must say `--worker fake` or `--worker pi`, the kind the run was started
 with; it must match the recorded execution manifest. A fake resume of a run that has an
 evidence directory is also refused. The workspace must be a
-directory other than the file system root or your home directory. `--model`, `--thinking` and `--allow-warnings` only matter with `--worker pi`.
+directory other than the file system root or your home directory; with `--worker pi` (also for
+`--dry-run`) it must be inside a git repository, so the run's edits can be reviewed and restored;
+resuming a run that has already finished only replays it and needs no repository. `--model`, `--thinking` and `--allow-warnings` only matter with `--worker pi`.
 
-**Workers.** `--worker fake` is the default: the scripted worker and gate. With no `--graph` it
-runs the example graph under a fresh run id and crashes `implement`'s first attempt so the journal
-shows a retry under a new fencing token; with `--graph` every attempt succeeds. Nothing is written
-under `.auto-pi-lot/evidence` for a fake run (it uses memory stores).
+**Workers.** `--worker fake` is the scripted worker and gate. It is the default only for the
+example graph: with no `--graph` it runs the example under a fresh run id and crashes
+`implement`'s first attempt so the journal shows a retry under a new fencing token. `--graph`
+requires an explicit `--worker`; with `--worker fake` every attempt of the plan succeeds without
+running anything. Every fake run of a plan file, and every fake resume, says `SIMULATED` on
+stderr (also with `--quiet`). Nothing is written under
+`.auto-pi-lot/evidence` for a fake run (it uses memory stores).
 
 `--worker pi` requires `--graph` or `--resume`. It runs each attempt as a Pi session in the
 workspace, runs the checks your configuration defines and accepts results on recorded evidence.
@@ -70,14 +76,23 @@ missing default file means no checks; a missing `--config` file, or an invalid o
 The policy is the defaults (fake: 2 concurrent, 2 attempts per node; pi: 1 concurrent attempt, 1 writer, 2 attempts per node), overridden
 by `config.policy`, overridden by `--max-concurrent`, `--max-attempts` and `--max-writers`
 (positive integers). Runtime state lives under `<workspace>/.auto-pi-lot/` (gitignored):
-`journal/` (override with `--journal`), `evidence/` and `artifacts/`.
+A new pi run first records a restore point. It commits the files of the repository that
+contains the workspace, except `.auto-pi-lot/` at any depth (submodules only as their commit).
+It does this through a temporary index inside the git directory, so HEAD, the index and the
+files stay as they are, and keeps the commit under
+`refs/auto-pi-lot/restore/<encoded runId, dots as %2e>`. The ref is printed on stderr, along
+with a warning when the tree was dirty, and reported as `restorePoint` (`ref`, `commit`, `root`,
+`dirty`). If the restore point cannot be created, the run exits 1 before any session opens.
+`journal/` (override with `--journal`), `evidence/`, `artifacts/` and, for pi, `sessions/run-<encoded runId>/`
+with one Pi JSONL transcript per attempt, named `<timestamp>_sha256-<hex>.jsonl` for attempt ID `sha256:<hex>`.
 
 **Progress.** Unless `--quiet`, stderr gets one line per applied event (`HH:MM:SS`, event type,
 `node=`, `attempt=` (first 12 characters after `sha256:`), `decision=`, `category=`, `reason=`)
-and the worker's log lines prefixed `worker:`.
+and the worker's log lines prefixed `worker:`. They include the acceptance gate's reasons for
+every rejection (`node <id> rejected: …`), for example a review that left a criterion unclear.
 
-**Output** (stdout, JSON): `mode: "run"`, `worker`, for pi also `route` (`provider`, `id`) and
-`workspace`, then `runId`, `journal`, `resumed`, `graphFile` (null for the example), `tornTail`,
+**Output** (stdout, JSON): `mode: "run"`, `worker`, for pi also `route` (`provider`, `id`),
+`workspace` and, once it exists, `sessions` (the transcript directory), then `runId`, `journal`, `resumed`, `graphFile` (null for the example), `tornTail`,
 `finalStatus`, `events` (summaries), `rejections`, `nodes`, `evidence`, `execution`, `verification`,
 `finalChecks` (final receipts with log IDs) and `replayMatches`.
 `evidence` maps each node id to its attempts: `{ attemptId, proposal?, checks, reviews,
@@ -87,7 +102,7 @@ deterministic (real clock, random ids); use `trace` for fixtures.
 **Exit codes.** 0: the run succeeded and the journal replays to the live state. 1: the run ended
 failed or cancelled, the arguments were wrong, the plan was invalid, had unknown checks or
 unaccepted lint warnings, Pi could not be set up, or a run id that already has a journal was
-started (use `--resume`). 2: the plan or configuration could not be read or is invalid, evidence
+started (use `--resume`, or `--run-id` for a new run). 2: the plan or configuration could not be read or is invalid, evidence
 is corrupt, or replay and live state disagree.
 
 **Preview.** `--dry-run` performs plan/config validation and checks for existing journals and
@@ -136,8 +151,8 @@ naming the file). If the workspace `package.json` has scripts named `test`, `lin
 `check` or `build`, the configuration gets one check profile each (`npm run <name>`, 10 minute
 timeout; data only, never run by `init`), otherwise `checks: []`. The plan has an `implement`
 node (naming those checks) feeding a `review` node, and a `runId` of `<dirname>-<yyyymmdd-hhmmss>`;
-change the `runId` for every new run of the same plan, because a run id with a journal cannot be
-started twice. Prints `{ mode: "init", config, plan, checks }` (the two file paths and the check
+a run id with a journal cannot be started twice, so start every further run of the same plan with
+`run --run-id <new id>` (or change the plan's `runId`). Prints `{ mode: "init", config, plan, checks }` (the two file paths and the check
 ids, and `gitignored`: whether `.auto-pi-lot/` was appended to `.gitignore`) and a hint on
 stderr. `--force` replaces regular files only, never a link. Exit 0, or 1 on bad arguments or an
 existing file.
@@ -145,8 +160,9 @@ existing file.
 ## inspect
 
 `auto-pi-lot inspect <runId> [--workspace <dir>] [--journal <dir>]` replays the run's journal
-and prints `{ mode: "inspect", runId, status, policy, tornTail, nodes, attempts, events,
-evidence, execution, verification, finalChecks }`; `attempts` maps each attempt id to `{ nodeId, fencingToken, status, consumes,
+and prints `{ mode: "inspect", runId, status, policy, tornTail, sessions, nodes, attempts, events,
+evidence, execution, verification, finalChecks }`; `sessions` is the run's transcript directory, or
+null when it does not exist; `attempts` maps each attempt id to `{ nodeId, fencingToken, status, consumes,
 invalidated }`. Read-only: it reads the journal and the evidence store and starts nothing. Exit 1
 for an unknown run or bad arguments; 2 for a corrupt journal, a journal that does not replay, or
 corrupt evidence.

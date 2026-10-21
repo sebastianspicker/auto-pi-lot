@@ -73,10 +73,13 @@ For the finished product see the [design document](design.md); for progress see 
   and holds filesystem ownership locks across the run (decision 0013). It is in-process, not a
   sandbox (decision 0012).
 - **Pi session opener.** `createPiSessionOpener` (`packages/pi`) pins the model route and opens
-  a closed Pi session per attempt: in-memory transcript, no extensions or skills, the worker's
-  tool allowlist and system prompt, SDK retries off.
-- **Pi extension.** The `/graph` command reports how to run graph mode from the command line.
-  It starts nothing inside Pi yet.
+  a closed Pi session per attempt: transcript in memory, or in the run's session directory
+  when the CLI asks for it (decision 0015), no extensions or skills, the worker's tool
+  allowlist and system prompt, SDK retries off.
+- **Pi extension.** `/graph run|resume|cancel|status|inspect` drive the command-line tool as a
+  child process (one run at a time per extension instance; no shell, no import of the CLI
+  package), showing progress in a widget. `/graph on|off|pause` need the background supervisor
+  and are not available.
 - **Command-line tool.** `init` writes a starter `auto-pi-lot.json` (check profiles discovered
   from `package.json` scripts, as data) and an example plan for the repository. `validate`
   checks a plan file and lists its issues, warnings, task order and ready tasks. `run` executes

@@ -20,3 +20,4 @@ consequences. Superseded records stay in place with a pointer to their replaceme
 | [0012](0012-in-process-session-worker.md) | The first real worker runs Pi sessions in the host process | Accepted 2026-10-08 |
 | [0013](0013-serial-evidence-and-run-ownership.md) | Serial evidence, CLI run ownership, and cooperative deadlines | Implemented 2026-10-08; self-verified |
 | [0014](0014-recorded-execution-and-final-verification.md) | Recorded execution manifests and final-tree verification | Implemented 2026-10-08; self-verified |
+| [0015](0015-persisted-session-transcripts.md) | CLI Pi runs keep each attempt's session transcript on disk | Implemented 2026-10-21; amends 0012 item 2 |

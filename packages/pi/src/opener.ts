@@ -1,11 +1,13 @@
 import type { CodingSession } from "@auto-pi-lot/core/session";
 import {
   createAgentSession,
+  createBashToolDefinition,
   DefaultResourceLoader,
   getAgentDir,
   ModelRuntime,
   SessionManager,
   SettingsManager,
+  type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 
 import { openPiSession, type PiSessionFactory } from "./session.js";
@@ -20,6 +22,8 @@ export interface PiSessionRequest {
   readonly systemPrompt: string;
   /** Whether the repository's context files (AGENTS.md and the like) are loaded; false for checkers. */
   readonly loadContextFiles: boolean;
+  /** The attempt the session serves; names its transcript file when the opener persists sessions. */
+  readonly attemptId?: string;
 }
 
 export type PiThinkingLevel = "off" | "low" | "medium" | "high";
@@ -30,6 +34,18 @@ export interface PiOpenerOptions {
   readonly thinkingLevel?: PiThinkingLevel;
   /** Pi's global config directory (credentials, models.json). Default: Pi's own (`~/.pi/agent`). */
   readonly agentDir?: string;
+  /**
+   * Where each session writes Pi's JSONL transcript, as `<timestamp>_<attempt id with ":" as "-">.jsonl`
+   * (`…_sha256-<hex>.jsonl`), so a failed
+   * attempt can be diagnosed afterwards. Default: none; transcripts stay in memory.
+   */
+  readonly sessionDir?: string;
+  /**
+   * Filters the environment of every command the `bash` tool runs; Pi's own `bash` is replaced by
+   * one that applies it. Default: none, so commands inherit the whole process environment,
+   * including any provider API keys exported there.
+   */
+  readonly shellEnv?: (env: NodeJS.ProcessEnv) => NodeJS.ProcessEnv;
   /** The SDK factory; injectable so tests never create a real session. Default: `createAgentSession`. */
   readonly factory?: PiSessionFactory;
   /** Builds the model runtime; injectable for tests. Default: `ModelRuntime.create()` on `agentDir`. */
@@ -48,13 +64,18 @@ export interface PiSessionOpener {
   readonly route: { readonly provider: string; readonly id: string };
 }
 
+/** Pi session ids allow only letters, digits, `.`, `_` and `-`; attempt ids are `sha256:<hex>`. */
+function sessionIdFor(attemptId: string): string {
+  return attemptId.replace(/[^A-Za-z0-9._-]/g, "-");
+}
+
 async function defaultRuntime(agentDir: string): Promise<ModelRuntimeLike> {
   return ModelRuntime.create({ authPath: `${agentDir}/auth.json`, modelsPath: `${agentDir}/models.json` });
 }
 
 /**
  * Resolves the model route once, up front, and returns a function that opens one closed Pi
- * session per request: in-memory transcript, no extensions, skills or prompt templates, the
+ * session per request: transcript in memory or in `sessionDir`, no extensions, skills or prompt templates, the
  * request's tool allowlist only, the request's system prompt instead of Pi's, SDK retries off
  * (an unaccounted retry is a hidden model call), and the repository's own context files
  * (AGENTS.md and the like) applied, as data, only when the request allows it. Credentials stay in Pi's store; the session
@@ -64,6 +85,7 @@ export async function createPiSessionOpener(options: PiOpenerOptions = {}): Prom
   const agentDir = options.agentDir ?? getAgentDir();
   const runtime = await (options.createRuntime ?? defaultRuntime)(agentDir);
   const factory = options.factory ?? createAgentSession;
+  const { shellEnv } = options;
 
   let model: ReturnType<ModelRuntimeLike["getModel"]>;
   if (options.model !== undefined) {
@@ -103,9 +125,27 @@ export async function createPiSessionOpener(options: PiOpenerOptions = {}): Prom
       ...(options.thinkingLevel === undefined ? {} : { thinkingLevel: options.thinkingLevel }),
       tools: [...request.tools],
       noTools: "all",
+      ...(shellEnv === undefined || !request.tools.includes("bash")
+        ? {}
+        : {
+            // An SDK tool with a built-in's name replaces the built-in.
+            customTools: [
+              // The SDK's own definition, widened to the list type `customTools` declares.
+              createBashToolDefinition(request.cwd, {
+                spawnHook: (context) => ({ ...context, env: shellEnv(context.env) }),
+              }) as unknown as ToolDefinition,
+            ],
+          }),
       resourceLoader,
       settingsManager,
-      sessionManager: SessionManager.inMemory(request.cwd),
+      sessionManager:
+        options.sessionDir === undefined
+          ? SessionManager.inMemory(request.cwd)
+          : SessionManager.create(
+              request.cwd,
+              options.sessionDir,
+              request.attemptId === undefined ? undefined : { id: sessionIdFor(request.attemptId) },
+            ),
     });
   };
   return Object.assign(opener, { route });

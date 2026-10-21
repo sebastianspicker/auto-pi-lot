@@ -8,7 +8,7 @@ import {
 } from "@auto-pi-lot/core";
 
 import { runCheck } from "./check-runner.js";
-import { fingerprintWorkspace } from "./workspace.js";
+import { createFingerprintCache, fingerprintWorkspace } from "./workspace.js";
 
 export interface WorkspaceVerifierOptions {
   workspace: string;
@@ -26,6 +26,7 @@ export class WorkspaceVerifier implements RunVerifier {
   readonly #abort = new AbortController();
   #pending: Promise<RunVerificationResult> | undefined;
   #runId: string | undefined;
+  readonly #fingerprintCache = createFingerprintCache();
 
   constructor(options: WorkspaceVerifierOptions) {
     this.#options = options;
@@ -49,7 +50,8 @@ export class WorkspaceVerifier implements RunVerifier {
 
   async #verify(runId: string): Promise<RunVerificationResult> {
     const { checks, evidence, artifacts, workspace } = this.#options;
-    const fingerprint = this.#options.fingerprint ?? fingerprintWorkspace;
+    const fingerprint =
+      this.#options.fingerprint ?? ((root: string) => fingerprintWorkspace(root, { cache: this.#fingerprintCache }));
     const execute = this.#options.runCheck ?? runCheck;
     const checkReceiptIds: string[] = [];
     const reasons: string[] = [];

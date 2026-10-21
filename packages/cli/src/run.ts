@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { lstat, realpath } from "node:fs/promises";
+import { lstat, mkdir, realpath } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 
@@ -41,14 +41,16 @@ import {
   ScriptedWorker,
 } from "@auto-pi-lot/host";
 import { createPiSessionOpener } from "@auto-pi-lot/pi";
-import { SessionWorker, WorkspaceVerifier } from "@auto-pi-lot/worker";
+import { buildCheckEnv, SessionWorker, WorkspaceVerifier } from "@auto-pi-lot/worker";
 
 import { parseFlags, positiveInteger } from "./args.js";
 import { EMPTY_CONFIG, loadConfig } from "./config.js";
 import { demoGraphInput } from "./demo.js";
 import { type AttemptEvidence, summarizeEvidence } from "./evidence-summary.js";
+import { isGitWorkTree } from "./git.js";
 import { acquireRunLocks } from "./lock.js";
-import { runtimePaths } from "./paths.js";
+import { runtimePaths, sessionDirFor } from "./paths.js";
+import { createRestorePoint, type RestorePoint } from "./restore.js";
 import {
   attemptNodes,
   type EventSummary,
@@ -60,7 +62,7 @@ import {
 import { printInvalidGraph, readJsonFile } from "./validate.js";
 
 export const RUN_USAGE =
-  "Usage: auto-pi-lot run [--graph <file> | --resume <runId>] [--worker fake|pi] [--workspace <dir>] [--config <file>] [--model <provider/id>] [--thinking off|low|medium|high] [--journal <dir>] [--max-concurrent <n>] [--max-attempts <n>] [--max-writers <n>] [--allow-warnings] [--quiet] [--dry-run]";
+  "Usage: auto-pi-lot run [--graph <file> [--run-id <id>] | --resume <runId>] [--worker fake|pi] [--workspace <dir>] [--config <file>] [--model <provider/id>] [--thinking off|low|medium|high] [--journal <dir>] [--max-concurrent <n>] [--max-attempts <n>] [--max-writers <n>] [--allow-warnings] [--quiet] [--dry-run]";
 
 /** Where `run` journals by default, relative to the workspace: the gitignored local runtime directory. */
 export const DEFAULT_JOURNAL_DIR = ".auto-pi-lot/journal";
@@ -78,6 +80,8 @@ export interface RunOptions {
   readonly journalDir: string | null;
   readonly resume: string | null;
   readonly graphFile: string | null;
+  /** Replaces the plan's `runId`, so one plan file can start several runs. */
+  readonly runId: string | null;
   readonly model: ModelRoute | null;
   readonly thinking: ThinkingLevel | null;
   readonly limits: {
@@ -94,6 +98,7 @@ const VALUE_FLAGS = [
   "--journal",
   "--resume",
   "--graph",
+  "--run-id",
   "--max-concurrent",
   "--max-attempts",
   "--max-writers",
@@ -118,6 +123,16 @@ export function parseRunArgs(
   const resume = values.get("--resume") ?? null;
   const graphFile = values.get("--graph") ?? null;
   if (resume !== null && graphFile !== null) return { ok: false, error: "--graph cannot be combined with --resume" };
+  if (values.has("--run-id") && graphFile === null) {
+    return { ok: false, error: "--run-id requires --graph; it names a new run of that plan" };
+  }
+  // The fake worker fabricates results; a plan file only runs with it when that is asked for.
+  if (graphFile !== null && !values.has("--worker")) {
+    return {
+      ok: false,
+      error: "--graph requires --worker pi (real sessions) or --worker fake (simulated outcomes, nothing is checked)",
+    };
+  }
   // Require an explicit worker selection and compare it with the journal before resuming.
   if (resume !== null && !values.has("--worker")) {
     return { ok: false, error: "--resume requires --worker fake or --worker pi, the kind the run was started with" };
@@ -179,6 +194,7 @@ export function parseRunArgs(
       journalDir: values.get("--journal") ?? null,
       resume,
       graphFile,
+      runId: values.get("--run-id") ?? null,
       model,
       thinking,
       limits,
@@ -194,6 +210,10 @@ export interface RunOutput {
   readonly worker: "fake" | "pi";
   readonly route?: ModelRoute;
   readonly workspace?: string;
+  /** Pi runs: the directory with one JSONL session transcript per attempt, when it exists. */
+  readonly sessions?: string;
+  /** New Pi runs: the snapshot of the working tree taken before the first attempt. */
+  readonly restorePoint?: RestorePoint;
   readonly runId: string;
   readonly journal: string;
   readonly resumed: boolean;
@@ -287,15 +307,25 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
-/** Reads a plan file and validates it; prints the problem and returns the exit code on failure. */
-async function loadPlan(file: string): Promise<{ ok: true; graph: ValidatedGraph } | { ok: false; code: number }> {
+/**
+ * Reads a plan file, applies a `--run-id` override, and validates it; prints the problem and
+ * returns the exit code on failure.
+ */
+async function loadPlan(
+  file: string,
+  runId: string | null,
+): Promise<{ ok: true; graph: ValidatedGraph } | { ok: false; code: number }> {
   const read = await readJsonFile(file);
   if (!read.ok) {
     console.error(read.error);
     console.error(RUN_USAGE);
     return { ok: false, code: 2 };
   }
-  const validated = validateGraph(read.value);
+  const plan =
+    runId !== null && typeof read.value === "object" && read.value !== null && !Array.isArray(read.value)
+      ? { ...read.value, runId }
+      : read.value;
+  const validated = validateGraph(plan);
   if (!validated.ok) {
     printIssues(file, validated.issues);
     return { ok: false, code: 1 };
@@ -305,7 +335,8 @@ async function loadPlan(file: string): Promise<{ ok: true; graph: ValidatedGraph
 
 /**
  * Runs the example graph, or a graph file, end to end through `RunHost`, or resumes a run from
- * its journal. The worker is the scripted fake by default, or Pi sessions with `--worker pi`.
+ * its journal. The example uses the scripted fake worker by default; a graph file needs an
+ * explicit `--worker fake` or `--worker pi`.
  * Returns the process exit code.
  */
 export async function runRun(args: readonly string[]): Promise<number> {
@@ -369,7 +400,7 @@ export async function runRun(args: readonly string[]): Promise<number> {
   // The graph a pi run will execute, validated before any session can be opened.
   let graph: ValidatedGraph | null = null;
   if (options.graphFile !== null) {
-    const plan = await loadPlan(options.graphFile);
+    const plan = await loadPlan(options.graphFile, options.runId);
     if (!plan.ok) return plan.code;
     graph = plan.graph;
   } else if (options.resume !== null) {
@@ -389,7 +420,9 @@ export async function runRun(args: readonly string[]): Promise<number> {
     const first = stored.events[0];
     execution = first?.type === "run_started" ? first.execution : undefined;
     if (execution === undefined) {
-      console.error("This legacy journal has no execution manifest; inspect it and start a new run with a fresh runId");
+      console.error(
+        "This legacy journal has no execution manifest; inspect it and start a new run of the plan with --graph <file> --run-id <new id>",
+      );
       return 1;
     }
     if (execution.worker !== options.worker) {
@@ -431,7 +464,9 @@ export async function runRun(args: readonly string[]): Promise<number> {
   }
   if (graph === null) throw new Error("Internal error: missing graph");
   if (!resumed && (await journal.read(graph.runId)).events.length > 0) {
-    console.error(`Run ${graph.runId} already has a journal; use --resume or choose a new runId in the plan`);
+    console.error(
+      `Run ${graph.runId} already has a journal; continue it with --resume ${graph.runId}, or start a new run of this plan with --run-id <new id>`,
+    );
     return 1;
   }
   if (usePi && policy.maxConcurrent !== 1) {
@@ -457,6 +492,13 @@ export async function runRun(args: readonly string[]): Promise<number> {
   if (usePi && !resumed && warnings.length > 0 && !options.allowWarnings) {
     console.log(JSON.stringify({ mode: "validate", file: options.graphFile, ok: true, warnings }, null, 2));
     console.error("Refusing to run a plan with lint warnings; fix them or pass --allow-warnings");
+    return 1;
+  }
+  // Pi edits the checkout in place: git is what makes those edits reviewable and restorable.
+  if (usePi && !terminalResume && !(await isGitWorkTree(workspace))) {
+    console.error(
+      `${workspace} is not a git repository; Pi runs need one so their changes can be reviewed and restored (git init, then commit your work)`,
+    );
     return 1;
   }
   const locks = [join(paths.journal, ".writer.lock"), ...(usePi ? [join(workspace, ".auto-pi-lot", "run.lock")] : [])];
@@ -508,6 +550,11 @@ export async function runRun(args: readonly string[]): Promise<number> {
     );
     return 0;
   }
+  if (!usePi && (options.graphFile !== null || resumed)) {
+    console.error(
+      "SIMULATED: the fake worker fabricates outcomes for this run; no session runs, no check runs, nothing is edited",
+    );
+  }
   const unlock = await acquireRunLocks(locks, workspace);
   let sessionWorker: SessionWorker | undefined;
   let verifier: WorkspaceVerifier | undefined;
@@ -542,6 +589,8 @@ export async function runRun(args: readonly string[]): Promise<number> {
 
     let ports: HostPorts;
     let route: ModelRoute | undefined;
+    let restorePoint: RestorePoint | undefined;
+    const sessionDir = sessionDirFor(paths, graph.runId);
     if (usePi) {
       const model = options.model ?? config.model;
       const thinkingLevel = options.thinking ?? config.thinkingLevel ?? "off";
@@ -558,7 +607,22 @@ export async function runRun(args: readonly string[]): Promise<number> {
           opener = await createPiSessionOpener({
             ...(model === undefined ? {} : { model }),
             thinkingLevel,
+            sessionDir,
+            // The model's shell gets the environment checks get: no provider API keys.
+            shellEnv: buildCheckEnv,
           });
+          if (!resumed) {
+            restorePoint = await createRestorePoint(workspace, graph.runId);
+            if (restorePoint.dirty) {
+              console.error(
+                "warning: the working tree has uncommitted changes or untracked files; they are in the restore point, and the run edits on top of them",
+              );
+            }
+            console.error(
+              `Restore point ${restorePoint.ref} (${restorePoint.commit.slice(0, 12)}). To bring files back to it, run in ${restorePoint.root}: git restore --source=${restorePoint.ref} --worktree -- .  (files the run creates are not removed)`,
+            );
+          }
+          await mkdir(sessionDir, { recursive: true, mode: 0o700 });
         }
       } catch (error) {
         console.error(error instanceof Error ? error.message : String(error));
@@ -598,7 +662,7 @@ export async function runRun(args: readonly string[]): Promise<number> {
         journal,
         worker,
         verifier,
-        gate: new EvidenceGate({ evidence }),
+        gate: new EvidenceGate({ evidence, ...(log === undefined ? {} : { log }) }),
         ...(onEvent === undefined ? {} : { onEvent }),
       };
     } else {
@@ -651,6 +715,8 @@ export async function runRun(args: readonly string[]): Promise<number> {
       mode: "run",
       worker: options.worker,
       ...(route === undefined ? {} : { route, workspace }),
+      ...(route !== undefined && (await exists(sessionDir)) ? { sessions: sessionDir } : {}),
+      ...(restorePoint === undefined ? {} : { restorePoint }),
       runId: host.runId,
       journal: journal.pathFor(host.runId),
       resumed,

@@ -9,14 +9,22 @@ you tested. You should get a first response within a week.
 
 ## Scope
 
-auto-pi-lot is early-stage and runs locally. It does not yet execute tasks, persist state or
-call models on its own. Reports are most useful for:
+auto-pi-lot is an experimental local tool. It runs plans through Pi model sessions that edit
+the checkout in place, runs configured check commands, and persists journals, evidence, check
+logs and session transcripts under `.auto-pi-lot/`. It is meant for trusted repositories: model
+sessions and checks run with the permissions of the local user, without a sandbox. Reports are
+most useful for:
 
-- the Pi extension and session adapter in `packages/pi`;
-- validation of untrusted input (graph specs, journal events) in `packages/core`;
-- the repository's CI and GitHub Pages workflows;
-- dependencies pinned in `package-lock.json`.
+- leaks of provider credentials into checks, the model's shell, task packets, evidence or
+  transcripts (the CLI gives checks and the model's `bash` an environment allowlist);
+- the Pi session opener, the session worker and the check runner in `packages/pi` and
+  `packages/worker` (tool allowlists, workspace boundaries, process cleanup);
+- validation of untrusted input (plan files, configuration, journal events, model reports) in
+  `packages/core` and `packages/cli`;
+- the integrity of journals, evidence, ownership locks and restore points;
+- the `/graph` Pi extension, the repository's CI and GitHub Pages workflows, and the
+  dependencies pinned in `package-lock.json`.
 
-The [design document](docs/design.md) describes the planned trust boundaries. Note that a
-Git worktree is not a sandbox: once worker execution exists, it runs with the permissions of
-the local user.
+The [design document](docs/design.md) describes the planned trust boundaries. A Git worktree
+is not a sandbox, and the model can read any file the local user can, including Pi's own
+credential store.

@@ -14,6 +14,16 @@ export type PiSessionFactory = typeof createAgentSession;
  */
 export async function openPiSession(factory: PiSessionFactory, options: PiSessionOptions): Promise<CodingSession> {
   const { session } = await factory(options);
+  // The SDK silently drops tool names it does not know; a role must get exactly its allowlist.
+  if (options?.tools !== undefined) {
+    const requested = [...new Set(options.tools)].sort();
+    const active = [...new Set(session.getActiveToolNames())].sort();
+    if (requested.join("\0") !== active.join("\0")) {
+      session.dispose();
+      // Active list first: the worker's log line is cut at 200 characters.
+      throw new Error(`Pi enabled tools [${active.join(", ")}] instead of [${requested.join(", ")}]`);
+    }
+  }
   return {
     prompt: (text) => session.prompt(text, { expandPromptTemplates: false }),
     abort: () => session.abort(),

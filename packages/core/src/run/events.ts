@@ -90,8 +90,8 @@ export const ResultProposedEventSchema = z.strictObject({
 export type ResultProposedEvent = z.infer<typeof ResultProposedEventSchema>;
 
 /**
- * The host's own acceptance gate outcome. AP-12 will produce this event from check/review
- * receipts; here it is an input the reducer consumes, not something it computes.
+ * The host's own acceptance gate outcome, written from the gate's verdict over check and review
+ * receipts (decision 0010); here it is an input the reducer consumes, not something it computes.
  */
 export const AcceptanceDecidedEventSchema = z
   .strictObject({

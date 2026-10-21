@@ -376,6 +376,7 @@ test("an implementer's happy path records checks and a proposal", async () => {
   assert.deepEqual(h.opened[0]?.tools, WRITER_TOOLS);
   assert.equal(h.opened[0]?.cwd, "/virtual/workspace");
   assert.equal(h.opened[0]?.systemPrompt, SYSTEM_PROMPT);
+  assert.equal(h.opened[0]?.attemptId, assignment.attemptId);
   assert.match(h.session.prompts[0] ?? "", /Add the frobnicator/);
   assert.match(h.session.prompts[0] ?? "", /unit: `npm test`/);
 

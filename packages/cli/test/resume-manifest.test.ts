@@ -15,6 +15,7 @@ const run = (...args: string[]) => spawnSync(process.execPath, [entry, ...args],
 test("resume previews pinned execution despite a broken current config and refuses overrides", async (t) => {
   const workspace = await realpath(await mkdtemp(join(tmpdir(), "apl-manifest-")));
   t.after(() => rm(workspace, { recursive: true, force: true }));
+  assert.equal(spawnSync("git", ["init", "-q", workspace]).status, 0, "Pi runs need a git workspace");
   const graph: GraphSpec = {
     schemaVersion: 1,
     id: "plan",
@@ -109,6 +110,8 @@ test("resume previews pinned execution despite a broken current config and refus
   );
   assert.equal(await completed.completion, "succeeded");
   const completedBytes = await readFile(journal.pathFor(graph.runId), "utf8");
+  // A finished run only replays and reports, so it needs no git repository (the workspace is a mkdtemp dir).
+  await rm(join(workspace, ".git"), { recursive: true, force: true });
   const resumed = run(...args.filter((arg) => arg !== "--dry-run"));
   assert.equal(resumed.status, 0, resumed.stderr);
   assert.equal(JSON.parse(resumed.stdout).finalStatus, "succeeded");

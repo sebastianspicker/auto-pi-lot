@@ -110,3 +110,20 @@ test("a throwing listener neither blocks remaining events nor other subscribers"
     for (const listener of previous) process.on("uncaughtException", listener);
   }
 });
+
+test("openPiSession refuses a session whose active tools differ from the requested allowlist", async () => {
+  const fake = createFakeSession();
+  const active = ["read"];
+  Object.assign(fake.session, { getActiveToolNames: () => active });
+  const factory = (async () => ({ session: fake.session })) as unknown as PiSessionFactory;
+
+  await assert.rejects(
+    openPiSession(factory, { tools: ["read", "grep"] }),
+    /Pi enabled tools \[read\] instead of \[grep, read\]/,
+  );
+  assert.equal(fake.isDisposed(), true, "the refused session is disposed");
+
+  active.push("grep");
+  const accepted = await openPiSession(factory, { tools: ["grep", "read"] });
+  accepted.dispose();
+});

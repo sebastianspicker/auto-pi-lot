@@ -475,6 +475,23 @@ test("a checker whose review leaves criteria unclear is rejected citing the revi
   assert.deepEqual(verdict.reasons, [`review ${unclear.id} left 2 criteria unclear; a fresh review is needed`]);
 });
 
+test("a rejection's reasons go to the optional log, so the operator sees why", async () => {
+  const evidence = new MemoryEvidenceStore();
+  const lines: string[] = [];
+  const gate = new EvidenceGate({ evidence, clock: () => NOW, log: (line) => lines.push(line) });
+  const unclear = makeReview("a1", "d", "v1", [{ criterion: "c1", verdict: "unclear", evidenceIds: [] }]);
+  const proposal = reviewerProposal("v1", unclear);
+  for (const record of [proposal, unclear]) await evidence.put(record);
+  await gate.evaluate(checkerRequest(proposal, ["c1"]));
+  assert.deepEqual(lines, [`node v rejected: review ${unclear.id} left 1 criterion unclear; a fresh review is needed`]);
+
+  const pass = makeReview("a1", "d", "v2", [{ criterion: "c1", verdict: "pass", evidenceIds: [] }]);
+  const passing = reviewerProposal("v2", pass);
+  for (const record of [passing, pass]) await evidence.put(record);
+  await gate.evaluate(checkerRequest(passing, ["c1"]));
+  assert.equal(lines.length, 1, "an acceptance logs nothing");
+});
+
 test("a checker whose review skips an acceptance criterion is rejected citing the review", async () => {
   const { evidence, gate } = setup();
   const partial = makeReview("a1", "d", "v1", [

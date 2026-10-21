@@ -27,7 +27,7 @@ import {
 import { runCheck } from "./check-runner.js";
 import { buildTaskPacket, type ConsumedResult, type RepairItem } from "./packet.js";
 import { toolsForRole } from "./tools.js";
-import { fingerprintWorkspace } from "./workspace.js";
+import { createFingerprintCache, fingerprintWorkspace } from "./workspace.js";
 
 export const SYSTEM_PROMPT = [
   "You are a worker inside the auto-pi-lot harness. The harness gives you one task at a time.",
@@ -43,6 +43,8 @@ const LOG_TAIL_CHARS = 2000;
 const LOG_LINE_CHARS = 200;
 
 export interface SessionOpenRequest {
+  /** The attempt the session serves; an opener may use it to name the session's transcript. */
+  attemptId: string;
   role: Role;
   tools: readonly string[];
   cwd: string;
@@ -94,6 +96,7 @@ const failed = (category: Extract<WorkerOutcome, { type: "failed" }>["category"]
 export class SessionWorker implements WorkerPort {
   readonly #options: SessionWorkerOptions;
   readonly #attempts = new Map<string, Attempt>();
+  readonly #fingerprintCache = createFingerprintCache();
 
   constructor(options: SessionWorkerOptions) {
     this.#options = options;
@@ -160,7 +163,8 @@ export class SessionWorker implements WorkerPort {
   async #run(assignment: WorkerAssignment, attempt: Attempt): Promise<WorkerOutcome> {
     const { node } = assignment;
     const { evidence, artifacts } = this.#options;
-    const fingerprint = this.#options.fingerprint ?? fingerprintWorkspace;
+    const fingerprint =
+      this.#options.fingerprint ?? ((root: string) => fingerprintWorkspace(root, { cache: this.#fingerprintCache }));
     const clockOptions = this.#options.clock === undefined ? {} : { clock: this.#options.clock };
 
     // 1. Resolve the declared checks.
@@ -221,6 +225,7 @@ export class SessionWorker implements WorkerPort {
 
     // 4. Open the session and watch it.
     const session = await this.#options.openSession({
+      attemptId: assignment.attemptId,
       role: node.role,
       tools: toolsForRole(node.role),
       cwd: this.#options.workspace,

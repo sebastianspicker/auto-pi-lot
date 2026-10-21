@@ -14,6 +14,8 @@ import {
 export interface EvidenceGateOptions {
   readonly evidence: EvidenceStore;
   readonly clock?: () => Date;
+  /** Progress for the operator: why an attempt was rejected. The same reasons are in the acceptance record. */
+  readonly log?: (line: string) => void;
 }
 
 const MAX_RECEIPTS = 64;
@@ -57,10 +59,12 @@ function newer(a: CheckReceipt, b: CheckReceipt): boolean {
 export class EvidenceGate implements AcceptanceGate {
   readonly #evidence: EvidenceStore;
   readonly #clock: () => Date;
+  readonly #log: ((line: string) => void) | undefined;
 
   constructor(options: EvidenceGateOptions) {
     this.#evidence = options.evidence;
     this.#clock = options.clock ?? (() => new Date());
+    this.#log = options.log;
   }
 
   async evaluate(request: AcceptanceRequest): Promise<AcceptanceVerdict> {
@@ -126,6 +130,9 @@ export class EvidenceGate implements AcceptanceGate {
       ...(clipped.length > 0 ? { reasons: clipped } : {}),
     });
     await this.#evidence.put(record);
+    if (outcome.decision === "rejected") {
+      for (const reason of clipped) this.#log?.(`node ${request.nodeId} rejected: ${reason}`);
+    }
     return { decision: outcome.decision, receiptIds, ...(clipped.length > 0 ? { reasons: clipped } : {}) };
   }
 

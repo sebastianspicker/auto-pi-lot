@@ -161,8 +161,8 @@ export type AcceptanceVerdict = z.infer<typeof AcceptanceVerdictSchema>;
 
 /**
  * The acceptance gate answers `evaluate_acceptance` commands. The reducer only ever learns a
- * verdict as the `acceptance_decided` event the host writes from it. AP-12 will implement this
- * port over check and review receipts; until then hosts inject a scripted gate.
+ * verdict as the `acceptance_decided` event the host writes from it. `EvidenceGate` in the host
+ * implements it over check and review receipts (decision 0010); tests inject a scripted gate.
  */
 export interface AcceptanceGate {
   evaluate(request: AcceptanceRequest): Promise<AcceptanceVerdict>;

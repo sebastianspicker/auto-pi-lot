@@ -14,6 +14,34 @@ export type FileKind = "file" | "symlink" | "missing" | "other";
 
 export type ExecFileLike = (file: string, args: readonly string[]) => Promise<{ readonly stdout: string }>;
 
+/** What the cache compares: nanosecond `lstat` fields of a regular file. */
+export interface CacheStat {
+  readonly dev: bigint;
+  readonly ino: bigint;
+  readonly size: bigint;
+  readonly mtimeNs: bigint;
+  readonly ctimeNs: bigint;
+}
+
+interface CacheEntry extends CacheStat {
+  /** Wall clock (ns) taken before the content was read. */
+  readonly hashedAtNs: bigint;
+  readonly hex: string;
+}
+
+/** Opaque per-file content-hash cache for `fingerprintWorkspace`; create one with `createFingerprintCache`. */
+export interface FingerprintCache {
+  readonly entries: Map<string, CacheEntry>;
+}
+
+/** A file is only trusted when its mtime and ctime are this much older than the moment it was hashed (the racy-git rule). */
+const RACY_WINDOW_NS = 2_000_000_000n;
+
+/** Creates an empty cache. Reuse one across calls on the same workspace to skip re-hashing unchanged files. */
+export function createFingerprintCache(): FingerprintCache {
+  return { entries: new Map() };
+}
+
 /** Everything fingerprinting reads, injectable so tests need no real tree. */
 export interface WorkspaceDeps {
   /** Relative, `/`-separated paths of the files that make up the tree. */
@@ -24,6 +52,12 @@ export interface WorkspaceDeps {
   lstat?: (absolutePath: string) => Promise<FileKind>;
   readFile?: (absolutePath: string) => Promise<Uint8Array>;
   readlink?: (absolutePath: string) => Promise<string>;
+  /** Reuses content hashes of files that provably have not changed; without it every file is read. */
+  cache?: FingerprintCache;
+  /** Nanosecond `lstat` of a regular file for the cache; `null` when it is missing or not a regular file. */
+  stat?: (absolutePath: string) => Promise<CacheStat | null>;
+  /** Wall clock in nanoseconds, taken before a file is read; injectable so the racy rule needs no sleeping. */
+  nowNs?: () => bigint;
 }
 
 /** git runs with the same allowlisted environment as a check, so no provider credential reaches it. */
@@ -45,6 +79,31 @@ async function defaultLstat(absolutePath: string): Promise<FileKind> {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return "missing";
     throw error;
   }
+}
+
+async function defaultStat(absolutePath: string): Promise<CacheStat | null> {
+  try {
+    const stats = await lstat(absolutePath, { bigint: true });
+    if (!stats.isFile()) return null;
+    return { dev: stats.dev, ino: stats.ino, size: stats.size, mtimeNs: stats.mtimeNs, ctimeNs: stats.ctimeNs };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+const defaultNowNs = (): bigint => BigInt(Date.now()) * 1_000_000n;
+
+function unchangedSince(entry: CacheEntry, stat: CacheStat): boolean {
+  return (
+    entry.dev === stat.dev &&
+    entry.ino === stat.ino &&
+    entry.size === stat.size &&
+    entry.mtimeNs === stat.mtimeNs &&
+    entry.ctimeNs === stat.ctimeNs &&
+    entry.hashedAtNs - stat.mtimeNs >= RACY_WINDOW_NS &&
+    entry.hashedAtNs - stat.ctimeNs >= RACY_WINDOW_NS
+  );
 }
 
 async function walk(root: string, relative: string, found: string[]): Promise<void> {
@@ -97,6 +156,9 @@ function isRuntimeState(entry: string): boolean {
  * target string, never followed) and a listed path that is gone `path\0deleted\n`. Mirrors
  * scripts/source-fingerprint.ts. Paths under `.auto-pi-lot/` are dropped in both listing modes,
  * and any listed path that resolves outside `root` is skipped, so only files under the root are read.
+ * With `deps.cache`, a file's hash is reused when its dev, inode, size, mtime and ctime are unchanged
+ * and both times are at least 2 s older than the moment it was hashed, so a file written in the
+ * same instant it was hashed is always read again. The result is identical with or without a cache.
  */
 export async function fingerprintWorkspace(root: string, deps: WorkspaceDeps = {}): Promise<string> {
   const absoluteRoot = path.resolve(root);
@@ -104,12 +166,33 @@ export async function fingerprintWorkspace(root: string, deps: WorkspaceDeps = {
   const kindOf = deps.lstat ?? defaultLstat;
   const read = deps.readFile ?? ((file: string) => readFile(file));
   const target = deps.readlink ?? ((file: string) => readlink(file));
+  const cache = deps.cache;
+  const statOf = deps.stat ?? defaultStat;
+  const nowNs = deps.nowNs ?? defaultNowNs;
 
   const entries = (await list(absoluteRoot)).filter((entry) => !isRuntimeState(entry));
   const hash = createHash("sha256");
   for (const entry of [...new Set(entries)].sort()) {
     const absolute = path.resolve(absoluteRoot, entry);
     if (!insideRoot(absoluteRoot, absolute)) continue;
+    if (cache !== undefined) {
+      const stat = await statOf(absolute);
+      if (stat !== null) {
+        const cached = cache.entries.get(absolute);
+        if (cached !== undefined && unchangedSince(cached, stat)) {
+          hash.update(`${entry}\0${cached.hex}\n`);
+          continue;
+        }
+        const hashedAtNs = nowNs();
+        const hex = createHash("sha256")
+          .update(await read(absolute))
+          .digest("hex");
+        cache.entries.set(absolute, { ...stat, hashedAtNs, hex });
+        hash.update(`${entry}\0${hex}\n`);
+        continue;
+      }
+      cache.entries.delete(absolute);
+    }
     const kind = await kindOf(absolute);
     if (kind === "other") continue;
     if (kind === "missing") {
