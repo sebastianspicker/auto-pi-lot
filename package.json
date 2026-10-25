@@ -31,7 +31,7 @@
     "@types/node": "22.20.4",
     "tsx": "4.23.15",
     "typescript": "7.0.2",
-    "zod": "4.6.5"
+    "zod": "4.6.7"
   },
   "homepage": "https://sebastianspicker.github.io/auto-pi-lot/",
   "repository": {
