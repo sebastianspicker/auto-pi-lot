@@ -153,7 +153,7 @@ function isRuntimeState(entry: string): boolean {
 /**
  * The exact-source identity of a working tree, `sha256:<hex>`: one line per listed path, sorted.
  * A file contributes `path\0sha256(content)\n`, a symlink `path\0symlink:<target>\n` (the link
- * target string, never followed) and a listed path that is gone `path\0deleted\n`. Mirrors
+ * target string, never followed) and a listed path that is gone `path\0deleted\n`. Also used by
  * scripts/source-fingerprint.ts. Paths under `.auto-pi-lot/` are dropped in both listing modes,
  * and any listed path that resolves outside `root` is skipped, so only files under the root are read.
  * With `deps.cache`, a file's hash is reused when its dev, inode, size, mtime and ctime are unchanged
@@ -161,6 +161,23 @@ function isRuntimeState(entry: string): boolean {
  * same instant it was hashed is always read again. The result is identical with or without a cache.
  */
 export async function fingerprintWorkspace(root: string, deps: WorkspaceDeps = {}): Promise<string> {
+  return (await snapshotWorkspace(root, deps)).digest;
+}
+
+/** The fingerprint plus, per listed path, the value hashed after `\0` (content hex, `deleted` or `symlink:<target>`). */
+export interface WorkspaceSnapshot {
+  readonly digest: string;
+  readonly entries: ReadonlyMap<string, string>;
+}
+
+/** Sorted paths whose value differs between the snapshots or that exist in only one of them. */
+export function changedPaths(before: WorkspaceSnapshot, after: WorkspaceSnapshot): string[] {
+  const paths = new Set([...before.entries.keys(), ...after.entries.keys()]);
+  return [...paths].filter((entry) => before.entries.get(entry) !== after.entries.get(entry)).sort();
+}
+
+/** Same walk and rules as `fingerprintWorkspace`, keeping the per-path values. */
+export async function snapshotWorkspace(root: string, deps: WorkspaceDeps = {}): Promise<WorkspaceSnapshot> {
   const absoluteRoot = path.resolve(root);
   const list = deps.listFiles ?? ((directory: string) => listWorkspaceFiles(directory, deps.execFile));
   const kindOf = deps.lstat ?? defaultLstat;
@@ -172,6 +189,11 @@ export async function fingerprintWorkspace(root: string, deps: WorkspaceDeps = {
 
   const entries = (await list(absoluteRoot)).filter((entry) => !isRuntimeState(entry));
   const hash = createHash("sha256");
+  const values = new Map<string, string>();
+  const record = (entry: string, value: string): void => {
+    values.set(entry, value);
+    hash.update(`${entry}\0${value}\n`);
+  };
   for (const entry of [...new Set(entries)].sort()) {
     const absolute = path.resolve(absoluteRoot, entry);
     if (!insideRoot(absoluteRoot, absolute)) continue;
@@ -180,7 +202,7 @@ export async function fingerprintWorkspace(root: string, deps: WorkspaceDeps = {
       if (stat !== null) {
         const cached = cache.entries.get(absolute);
         if (cached !== undefined && unchangedSince(cached, stat)) {
-          hash.update(`${entry}\0${cached.hex}\n`);
+          record(entry, cached.hex);
           continue;
         }
         const hashedAtNs = nowNs();
@@ -188,7 +210,7 @@ export async function fingerprintWorkspace(root: string, deps: WorkspaceDeps = {
           .update(await read(absolute))
           .digest("hex");
         cache.entries.set(absolute, { ...stat, hashedAtNs, hex });
-        hash.update(`${entry}\0${hex}\n`);
+        record(entry, hex);
         continue;
       }
       cache.entries.delete(absolute);
@@ -196,13 +218,13 @@ export async function fingerprintWorkspace(root: string, deps: WorkspaceDeps = {
     const kind = await kindOf(absolute);
     if (kind === "other") continue;
     if (kind === "missing") {
-      hash.update(`${entry}\0deleted\n`);
+      record(entry, "deleted");
     } else if (kind === "symlink") {
-      hash.update(`${entry}\0symlink:${await target(absolute)}\n`);
+      record(entry, `symlink:${await target(absolute)}`);
     } else {
       const content = await read(absolute);
-      hash.update(`${entry}\0${createHash("sha256").update(content).digest("hex")}\n`);
+      record(entry, createHash("sha256").update(content).digest("hex"));
     }
   }
-  return `sha256:${hash.digest("hex")}`;
+  return { digest: `sha256:${hash.digest("hex")}`, entries: values };
 }

@@ -173,6 +173,8 @@ function harness(
   turns: Script[],
   options: {
     fingerprints?: string[];
+    /** Per-call snapshot entries, parallel to `fingerprints`; a missing call gets an empty map. */
+    entries?: ReadonlyMap<string, string>[];
     checks?: CheckProfile[];
     evidence?: MemoryEvidence;
     runCheck?: SessionWorkerOptions["runCheck"];
@@ -185,6 +187,7 @@ function harness(
   const logs: string[] = [];
   const queue = [...(options.fingerprints ?? ["sha256:base", "sha256:after"])];
   const fingerprints: string[] = [];
+  let calls = 0;
   const checksRun: Harness["checksRun"] = [];
   const settings: SessionWorkerOptions = {
     workspace: "/virtual/workspace",
@@ -196,10 +199,12 @@ function harness(
     evidence,
     artifacts,
     clock: () => new Date(Date.UTC(2026, 9, 8, 12, 0, 0)),
-    fingerprint: async () => {
+    snapshot: async () => {
       const value = queue.length > 1 ? (queue.shift() as string) : (queue[0] as string);
       fingerprints.push(value);
-      return value;
+      const entries = options.entries?.[calls] ?? new Map<string, string>();
+      calls += 1;
+      return { digest: value, entries };
     },
     runCheck:
       options.runCheck ??
@@ -282,7 +287,7 @@ test("a deadline during session setup disposes the late session without promptin
     checks: [],
     evidence: new MemoryEvidence(),
     artifacts: new MemoryArtifacts(),
-    fingerprint: async () => "sha256:base",
+    snapshot: async () => ({ digest: "sha256:base", entries: new Map<string, string>() }),
     openSession: async () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
       return s;
@@ -341,6 +346,69 @@ test("a reviewer refuses a candidate from a different workspace revision before 
   const h = harness([], { evidence: await candidateEvidence(), fingerprints: ["sha256:drifted"] });
   failedWith(await run(h, checkerAssignment("reviewer")), "effect_uncertain");
   assert.equal(h.opened.length, 0);
+});
+
+test("a writer's proposal lists the paths whose content changed or appeared", async () => {
+  const h = harness([completeWith(workJson())], {
+    fingerprints: ["sha256:base", "sha256:after"],
+    entries: [
+      new Map([
+        ["src/a.ts", "old"],
+        ["src/same.ts", "x"],
+      ]),
+      new Map([
+        ["src/a.ts", "new"],
+        ["src/b.ts", "added"],
+        ["src/same.ts", "x"],
+      ]),
+    ],
+  });
+  await run(h, assignmentFor("implementer"));
+  const proposal = h.evidence.ofKind("proposal")[0] as ResultProposal;
+  assert.deepEqual(proposal.changedPaths, ["src/a.ts", "src/b.ts"]);
+});
+
+test("more than 500 changed paths are capped and the proposal says so", async () => {
+  const after = new Map(Array.from({ length: 501 }, (_, index) => [`f/${String(index).padStart(3, "0")}.ts`, "x"]));
+  const h = harness([completeWith(workJson())], {
+    fingerprints: ["sha256:base", "sha256:after"],
+    entries: [new Map(), after],
+  });
+  await run(h, assignmentFor("implementer"));
+  const proposal = h.evidence.ofKind("proposal")[0] as ResultProposal;
+  assert.equal(proposal.changedPaths?.length, 500);
+  assert.ok(proposal.limitations.includes("1 more changed paths not listed"));
+});
+
+test("package and test files are listed first, so padding files cannot push them past the cap", async () => {
+  const after = new Map(Array.from({ length: 501 }, (_, index) => [`0/${String(index).padStart(3, "0")}.ts`, "x"]));
+  after.set("zz/weak.test.ts", "weakened");
+  after.set("package.json", "scripts changed");
+  const h = harness([completeWith(workJson())], {
+    fingerprints: ["sha256:base", "sha256:after"],
+    entries: [new Map(), after],
+  });
+  await run(h, assignmentFor("implementer"));
+  const proposal = h.evidence.ofKind("proposal")[0] as ResultProposal;
+  assert.deepEqual(proposal.changedPaths?.slice(0, 3), ["package.json", "zz/weak.test.ts", "0/000.ts"]);
+  assert.ok(proposal.limitations.includes("3 more changed paths not listed"));
+});
+
+test("changed paths are listed since the run's first attempt, so a rejected attempt's edit stays visible", async () => {
+  const weakened = new Map([["test/a.test.ts", "weak"]]);
+  const both = new Map([
+    ["test/a.test.ts", "weak"],
+    ["src/b.ts", "new"],
+  ]);
+  const h = harness([completeWith(workJson()), completeWith(workJson())], {
+    // Two snapshots per attempt (before and after the session; the node declares no checks).
+    fingerprints: ["sha256:base", "sha256:a1", "sha256:a1", "sha256:a2"],
+    entries: [new Map(), weakened, weakened, both],
+  });
+  await run(h, assignmentFor("implementer"));
+  await run(h, assignmentFor("implementer", { attemptId: "attempt-2", fencingToken: 2 }));
+  const second = h.evidence.ofKind("proposal").find((record) => record.attemptId === "attempt-2") as ResultProposal;
+  assert.deepEqual(second.changedPaths, ["test/a.test.ts", "src/b.ts"]);
 });
 
 test("start returns synchronously and reports later", async () => {

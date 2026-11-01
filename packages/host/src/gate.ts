@@ -4,6 +4,7 @@ import {
   type AcceptanceRequest,
   type AcceptanceVerdict,
   type CheckReceipt,
+  criteriaMissing,
   type EvidenceStore,
   identifyEvidence,
   isCheckerRole,
@@ -269,12 +270,6 @@ export class EvidenceGate implements AcceptanceGate {
     }
     return { decision: "accepted", checkIds: [...passingChecks], reviewIds: countedReviews, reasons };
   }
-}
-
-/** The producer's acceptance criteria that `review` has no verdict for (exact text after trimming). */
-export function criteriaMissing(criteria: readonly string[], review: ReviewReceipt): string[] {
-  const judged = new Set(review.verdicts.map((verdict) => verdict.criterion.trim()));
-  return criteria.map((criterion) => criterion.trim()).filter((criterion) => !judged.has(criterion));
 }
 
 interface Outcome {

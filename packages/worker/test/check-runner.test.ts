@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
-import { mkdir, mkdtemp, readFile, rm, symlink } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -19,6 +19,7 @@ import {
   buildCheckEnv,
   CHECK_ENV_ALLOWLIST,
   type ChildLike,
+  checkDefinitionDigest,
   parseTestCount,
   type RunCheckInput,
   runCheck,
@@ -356,4 +357,138 @@ test("the default spawn runs a real process and reports its exit status", async 
     { ...inputFor(artifacts), workspace, env: process.env },
   );
   assert.equal(passing.outcome, "pass");
+});
+
+async function pinnedWorkspace(t: test.TestContext): Promise<string> {
+  const dir = await mkdtemp(path.join(tmpdir(), "apl-pin-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  await writeFile(path.join(dir, "package.json"), JSON.stringify({ scripts: { test: "node a.js" }, dependencies: {} }));
+  return dir;
+}
+
+async function runPinned(workspace: string, pinned: CheckProfile, change: () => Promise<void>) {
+  const definitionDigest = await checkDefinitionDigest(workspace, pinned);
+  assert.ok(definitionDigest !== null);
+  await change();
+  const artifacts = new MemoryArtifacts();
+  const { spawn, calls } = fakeSpawn((child) => {
+    child.emit("exit", 0, null);
+    child.emit("close", 0, null);
+  });
+  const receipt = await runCheck({ ...pinned, definitionDigest }, inputFor(artifacts, { spawn, workspace }));
+  return { receipt, calls, log: artifacts.text(receipt.logArtifactIds[0]) };
+}
+
+const pinnedProfile: CheckProfile = { id: "unit", command: "npm", args: ["run", "test"] };
+const setPackage = (workspace: string, value: object) => () =>
+  writeFile(path.join(workspace, "package.json"), JSON.stringify(value));
+
+test("a pinned npm script that did not change still runs", async (t) => {
+  const workspace = await pinnedWorkspace(t);
+  const { receipt, calls } = await runPinned(workspace, pinnedProfile, async () => undefined);
+  assert.equal(receipt.outcome, "pass");
+  assert.equal(calls.length, 1);
+});
+
+test("a pinned npm script whose body changed is not run", async (t) => {
+  const workspace = await pinnedWorkspace(t);
+  const { receipt, calls, log } = await runPinned(
+    workspace,
+    pinnedProfile,
+    setPackage(workspace, { scripts: { test: "true" } }),
+  );
+  assert.equal(receipt.outcome, "error");
+  assert.equal(receipt.exitCode, null);
+  assert.equal(calls.length, 0);
+  assert.match(log, /check not run: the package\.json scripts or config, or an \.npmrc, changed since the run started/);
+});
+
+test("a pinned `npm test` is refused after scripts.test changes", async (t) => {
+  const workspace = await pinnedWorkspace(t);
+  const { receipt, calls } = await runPinned(
+    workspace,
+    { id: "unit", command: "npm", args: ["test", "--", "--foo"] },
+    setPackage(workspace, { scripts: { test: "true" } }),
+  );
+  assert.equal(receipt.outcome, "error");
+  assert.equal(calls.length, 0);
+});
+
+test("a change outside scripts does not stop a pinned check", async (t) => {
+  const workspace = await pinnedWorkspace(t);
+  const { receipt, calls } = await runPinned(
+    workspace,
+    pinnedProfile,
+    setPackage(workspace, { scripts: { test: "node a.js" }, dependencies: { x: "1.0.0" } }),
+  );
+  assert.equal(receipt.outcome, "pass");
+  assert.equal(calls.length, 1);
+});
+
+test("a new .npmrc stops a pinned check", async (t) => {
+  const workspace = await pinnedWorkspace(t);
+  const { receipt, calls } = await runPinned(workspace, pinnedProfile, () =>
+    writeFile(path.join(workspace, ".npmrc"), "script-shell=/bin/sh\n"),
+  );
+  assert.equal(receipt.outcome, "error");
+  assert.equal(calls.length, 0);
+});
+
+test("a new pre-script stops a pinned check", async (t) => {
+  const workspace = await pinnedWorkspace(t);
+  const { receipt, calls } = await runPinned(
+    workspace,
+    pinnedProfile,
+    setPackage(workspace, { scripts: { test: "node a.js", pretest: "x" } }),
+  );
+  assert.equal(receipt.outcome, "error");
+  assert.equal(calls.length, 0);
+});
+
+test("a script the pinned script calls is pinned too", async (t) => {
+  const workspace = await pinnedWorkspace(t);
+  await setPackage(workspace, { scripts: { test: "npm run unit && npm run lint", unit: "node a.js", lint: "x" } })();
+  const { receipt, calls } = await runPinned(
+    workspace,
+    pinnedProfile,
+    setPackage(workspace, { scripts: { test: "npm run unit && npm run lint", unit: "true", lint: "x" } }),
+  );
+  assert.equal(receipt.outcome, "error");
+  assert.equal(calls.length, 0);
+});
+
+test("a changed package.json config block stops a pinned check", async (t) => {
+  const workspace = await pinnedWorkspace(t);
+  const { receipt, calls } = await runPinned(
+    workspace,
+    pinnedProfile,
+    setPackage(workspace, { scripts: { test: "node a.js" }, config: { strict: false } }),
+  );
+  assert.equal(receipt.outcome, "error");
+  assert.equal(calls.length, 0);
+});
+
+test("a check in a directory without package.json pins the nearest one above it, as npm uses it", async (t) => {
+  const workspace = await pinnedWorkspace(t);
+  await mkdir(path.join(workspace, "sub"));
+  const { receipt, calls } = await runPinned(
+    workspace,
+    { ...pinnedProfile, cwd: "sub" },
+    setPackage(workspace, { scripts: { test: "true" } }),
+  );
+  assert.equal(receipt.outcome, "error");
+  assert.equal(calls.length, 0);
+});
+
+test("checkDefinitionDigest pins every npm profile the same way and ignores other commands", async (t) => {
+  const workspace = await pinnedWorkspace(t);
+  assert.equal(await checkDefinitionDigest(workspace, { id: "n", command: "node", args: ["--test"] }), null);
+  const viaRun = await checkDefinitionDigest(workspace, pinnedProfile);
+  assert.ok(viaRun !== null);
+  for (const args of [["test"], ["t"], ["run", "--silent", "test"], ["rum", "test"], ["install-test"], ["start"]]) {
+    assert.equal(await checkDefinitionDigest(workspace, { id: "n", command: "npm", args }), viaRun, args.join(" "));
+  }
+  // The digest does not depend on where the workspace lives.
+  const copy = await pinnedWorkspace(t);
+  assert.equal(await checkDefinitionDigest(copy, pinnedProfile), viaRun);
 });

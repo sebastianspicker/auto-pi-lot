@@ -57,7 +57,7 @@ fingerprint function), so it is tested without a model or a real process. It imp
   the process cannot start or the `cwd` leaves the workspace. The worker fingerprints source after each check and refuses a proposal if it changed. A node:test or TAP summary in the
   log becomes `testCount`.
 - **Workspace fingerprint** (`src/workspace.ts`). `sha256` over one sorted line per file (content
-  hash, symlink target string, or `deleted`), the same algorithm as `scripts/source-fingerprint.ts`.
+  hash, symlink target string, or `deleted`); `npm run fingerprint` (`scripts/source-fingerprint.ts`) calls it too.
   Files are listed with `git -c core.fsmonitor=false ls-files -co --exclude-standard` under the
   same allowlisted environment as a check, or by walking the directory when git is unavailable
   (skipping `.git`, `node_modules`, `.auto-pi-lot`). `.auto-pi-lot/` is always excluded and

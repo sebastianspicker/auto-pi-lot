@@ -214,7 +214,9 @@ shows the reducer behavior from that deployed commit, not necessarily the latest
 ## Final verification and recorded execution
 
 New CLI runs persist an execution manifest alongside the graph and policy. Pi manifests pin
-workspace, worker, resolved model, thinking and check profiles; resume uses recorded settings.
+workspace, worker, resolved model, thinking and check profiles, and for `npm` checks a digest of
+the scripts they run, which the check runner verifies before every check (decision 0016);
+resume uses recorded settings.
 The reducer moves accepted Pi runs into `verifying`. The host invokes `RunVerifier`, implemented
 by `WorkspaceVerifier`, after persisting that intent. The verifier stores final-tree check
 receipts; `run_verified` determines terminal status. Resume reruns an unfinished verification,

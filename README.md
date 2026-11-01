@@ -134,6 +134,14 @@ Set each producer's `checks` to the profile IDs it must pass. `check --profile t
 that baseline profile. Check working directories default to the workspace and must stay inside
 it. Each check defaults to 10 minutes and can allow at most one hour.
 
+A Pi run pins what its `npm` checks run. When the run starts it records the `scripts` and
+`config` blocks of the `package.json` that npm uses and any `.npmrc` from the check's directory
+up to the workspace root. If a task changes them, `npm` checks are not run and count as an
+error, so a model cannot pass a check by rewriting its script. Adding a dependency is fine.
+Other commands, and the test files themselves, are not pinned: reviewers get the list of files
+changed since the run started, so they can read changed tests. See
+[decision 0016](docs/decisions/0016-pinned-check-definitions.md).
+
 After every task is accepted, all node-declared checks run again on the combined tree before
 success is recorded. Add profiles to `finalChecks` for integration tests that need all tasks
 finished. A failure at this stage fails the run; inspect `verification` and `finalChecks` in

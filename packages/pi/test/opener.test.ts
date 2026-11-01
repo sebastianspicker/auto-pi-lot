@@ -70,6 +70,9 @@ test("the opener pins the requested route and opens a closed session per request
   assert.equal((options.model as { id: string } | undefined)?.id, "claude-test");
   assert.ok(options.sessionManager, "an in-memory session manager is supplied");
   assert.ok(options.resourceLoader, "a closed resource loader is supplied");
+  // Retries and cache warming would send model requests that never reach the token budget.
+  assert.equal(options.settingsManager?.getRetryEnabled(), false);
+  assert.equal(options.settingsManager?.getCacheWarmingMode(), "off");
   session.dispose();
 });
 

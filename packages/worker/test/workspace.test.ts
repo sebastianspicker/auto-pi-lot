@@ -6,10 +6,12 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+  changedPaths,
   createFingerprintCache,
   type FileKind,
   fingerprintWorkspace,
   listWorkspaceFiles,
+  snapshotWorkspace,
   type WorkspaceDeps,
 } from "../src/index.js";
 
@@ -46,6 +48,38 @@ test("fingerprint hashes sorted path lines and is order independent", async () =
     .digest("hex");
   assert.equal(first, `sha256:${expected}`);
   assert.equal(second, first);
+});
+
+test("a snapshot's digest is the fingerprint and its entries hold the hashed values", async () => {
+  const root = path.resolve("/virtual/root");
+  const tree: FakeTree = { files: { "a.txt": "A" }, links: { link: "t" } };
+  const deps = depsFor(root, tree, ["a.txt", "link", "gone.txt"]);
+  const snapshot = await snapshotWorkspace(root, deps);
+  assert.equal(snapshot.digest, await fingerprintWorkspace(root, deps));
+  assert.deepEqual(
+    [...snapshot.entries],
+    [
+      ["a.txt", sha("A")],
+      ["gone.txt", "deleted"],
+      ["link", "symlink:t"],
+    ],
+  );
+});
+
+test("changedPaths lists changed, added and deleted paths sorted, and not unchanged ones", () => {
+  const snap = (entries: [string, string][]) => ({ digest: "sha256:x", entries: new Map(entries) });
+  const before = snap([
+    ["same", "1"],
+    ["edited", "1"],
+    ["removed", "1"],
+  ]);
+  const after = snap([
+    ["same", "1"],
+    ["edited", "2"],
+    ["added", "1"],
+  ]);
+  assert.deepEqual(changedPaths(before, after), ["added", "edited", "removed"]);
+  assert.deepEqual(changedPaths(before, before), []);
 });
 
 test("fingerprint changes when content changes", async () => {

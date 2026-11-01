@@ -25,6 +25,14 @@ export const CheckProfileSchema = z.strictObject({
 });
 export type CheckProfile = z.infer<typeof CheckProfileSchema>;
 
+/**
+ * A check profile as pinned in an execution manifest. `definitionDigest` fingerprints what an
+ * `npm run <script>` check runs at admission; set only in an execution manifest, never in
+ * auto-pi-lot.json.
+ */
+export const PinnedCheckProfileSchema = CheckProfileSchema.extend({ definitionDigest: IdSchema.optional() });
+export type PinnedCheckProfile = z.infer<typeof PinnedCheckProfileSchema>;
+
 /** A pinned model route for the real worker: provider and model id as the SDK's registry names them. */
 export const ModelRouteSchema = z.strictObject({
   provider: z.string().trim().min(1).max(128),
@@ -41,7 +49,7 @@ export const ExecutionManifestSchema = z.discriminatedUnion("worker", [
   z.strictObject({
     worker: z.literal("pi"),
     workspace: z.string().min(1),
-    checks: z.array(CheckProfileSchema).max(64),
+    checks: z.array(PinnedCheckProfileSchema).max(64),
     model: ModelRouteSchema,
     thinkingLevel: ThinkingLevelSchema,
     finalCheckIds: z.array(IdSchema).max(64),

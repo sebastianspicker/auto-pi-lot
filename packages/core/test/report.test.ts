@@ -1,7 +1,16 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { test } from "node:test";
-import { extractJsonBlock } from "../src/run/report.js";
+import { criteriaMissing, extractJsonBlock } from "../src/run/report.js";
+
+test("criteriaMissing matches verdicts to criteria by exact text after trimming", () => {
+  const review = { verdicts: [{ criterion: " rejects empty email " }, { criterion: "Logs the error" }] };
+  assert.deepEqual(criteriaMissing(["rejects empty email", "logs the error", "  keeps the form  "], review), [
+    "logs the error",
+    "keeps the form",
+  ]);
+  assert.deepEqual(criteriaMissing(["rejects empty email"], review), []);
+});
 
 test("extracts the last complete JSON fence with whitespace and invalid-final semantics", () => {
   assert.deepEqual(extractJsonBlock('intro ```json \r\n {"ok":true}\n \t``` tail'), { ok: true });

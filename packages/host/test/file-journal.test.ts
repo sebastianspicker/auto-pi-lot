@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { appendFile, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import test from "node:test";
 
 import { canonicalJson, digest, type GraphSpec, type JournalEvent, type RunPolicy, replay } from "@auto-pi-lot/core";
 
 import {
+  encodeRunId,
   FileJournalStore,
   type HostPorts,
   JournalCorruptError,
@@ -131,6 +132,24 @@ test("runs are isolated and run ids cannot escape the directory", async () => {
     assert.equal(dirname(store.pathFor(odd)), dir);
     await store.append(event(odd, 1));
     same((await store.read(odd)).events, [event(odd, 1)]);
+  });
+});
+
+test("a run id too long for a file name is shortened with a hash; ids that fit keep their path", async () => {
+  await withDir(async (dir) => {
+    const store = new FileJournalStore(dir);
+    const long = `Übungsblätter-${"Ä".repeat(40)}`; // 274-byte journal file name when encoded in full
+    const longer = `${long}-2`;
+    for (const runId of [long, longer]) await store.append(event(runId, 1));
+    same((await store.read(long)).events, [event(long, 1)]);
+    same((await store.read(longer)).events, [event(longer, 1)]);
+    assert.notEqual(store.pathFor(long), store.pathFor(longer));
+    for (const runId of [long, longer]) assert.ok(Buffer.byteLength(basename(store.pathFor(runId))) <= 255);
+    assert.equal(encodeRunId("demo-Run.1"), "demo-%52un.1");
+    const fits = "a".repeat(245);
+    assert.equal(encodeRunId(fits), fits);
+    // Using a shortened name as a run id of its own cannot reach the long id's files.
+    assert.notEqual(encodeRunId(encodeRunId(long)), encodeRunId(long));
   });
 });
 

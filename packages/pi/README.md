@@ -85,9 +85,11 @@ pi --extension <repo>/packages/pi/dist/extension.js
 
 Only one run is active per extension instance; a second `run` or `resume` is refused. Plan
 paths and run IDs may not contain spaces, control characters or start with `-`. An active run
-receives SIGINT when the Pi session shuts down. The run keeps going if the Pi session that
-started it is replaced (`/new`, `/resume`, `/reload`). Its progress and final notice are then
-dropped, so use `auto-pi-lot status` to see how it ended. `/graph on`, `off` and `pause` are not available
+receives SIGINT when Pi quits. The run keeps going if the Pi session that started it is
+replaced (`/new`, `/resume`, `/fork`, `/reload`). Its progress and final notice are then
+dropped, so use `auto-pi-lot status` to see how it ended. `/graph cancel` in the new session
+cannot reach that run; to cancel it, send SIGINT to the `pid` recorded in `.auto-pi-lot/run.lock`
+(`kill -INT <pid>`). `/graph on`, `off` and `pause` are not available
 yet: they need the background supervisor, which is not part of this alpha.
 
 The CLI is found at `$AUTO_PI_LOT_CLI` when set, otherwise at `../../cli/dist/index.js`

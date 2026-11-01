@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { createRestorePoint, restoreRefFor } from "../src/restore.js";
+import { createRestorePoint, discardRestorePoint, restoreRefFor } from "../src/restore.js";
 
 function git(cwd: string, ...args: string[]): string {
   const result = spawnSync("git", args, { cwd, encoding: "utf8" });
@@ -89,4 +89,45 @@ test("the runtime directory never enters a restore point, even when .gitignore d
   const point = await createRestorePoint(root, "runtime");
   assert.equal(point.dirty, false, "only runtime state differs from HEAD");
   assert.equal(git(root, "ls-tree", "-r", "--name-only", point.commit), "a.txt");
+});
+
+test("long run ids get a restore point whose ref name fits", async (t) => {
+  const root = await repository();
+  t.after(() => rm(root, { recursive: true, force: true }));
+  for (const runId of [`Übungsblätter-${"Ä".repeat(40)}`, `run${".".repeat(120)}`]) {
+    const point = await createRestorePoint(root, runId);
+    assert.equal(git(root, "rev-parse", point.ref), point.commit);
+    assert.ok(point.ref.slice("refs/auto-pi-lot/restore/".length).length <= 255);
+  }
+});
+
+test("a second restore point for the same run id is refused and the first snapshot is kept", async (t) => {
+  const root = await repository();
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await writeFile(join(root, "tracked.txt"), "before the run\n");
+  const first = await createRestorePoint(root, "same-run");
+  await writeFile(join(root, "tracked.txt"), "edited by the run\n");
+  await assert.rejects(createRestorePoint(root, "same-run"), /already has a restore point.*--run-id/);
+  assert.equal(git(root, "rev-parse", first.ref), first.commit, "the first snapshot is still referenced");
+  assert.equal(git(root, "show", `${first.ref}:tracked.txt`), "before the run");
+  const leftovers = (await readdir(git(root, "rev-parse", "--absolute-git-dir"))).filter((name) =>
+    name.startsWith("auto-pi-lot-restore-index-"),
+  );
+  assert.deepEqual(leftovers, [], "no temporary restore index is left behind");
+});
+
+test("discarding a restore point removes only its own ref, so the run id can be used again", async (t) => {
+  const root = await repository();
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const unused = await createRestorePoint(root, "never-started");
+  await discardRestorePoint(unused);
+  assert.equal(spawnSync("git", ["rev-parse", "--verify", "--quiet", unused.ref], { cwd: root }).status, 1);
+  const again = await createRestorePoint(root, "never-started");
+  assert.equal(git(root, "rev-parse", again.ref), again.commit);
+
+  await writeFile(join(root, "tracked.txt"), "changed\n");
+  const other = await createRestorePoint(root, "other-run");
+  // A ref that no longer points at the snapshot this process made is left alone.
+  await assert.rejects(discardRestorePoint({ ...other, commit: again.commit }));
+  assert.equal(git(root, "rev-parse", other.ref), other.commit);
 });

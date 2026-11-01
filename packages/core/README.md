@@ -84,8 +84,9 @@ records that a journal `result_proposed` event's `proposalDigest` (the proposal'
 `run/checks.ts` holds what an operator configures: a `CheckProfile` is one executable with an
 argument list (never a shell string), an optional directory inside the workspace and a timeout;
 `ProjectConfig` is the strict shape of the `auto-pi-lot.json` file (profiles, an optional pinned
-`ModelRoute`, a thinking level, default `RunPolicy` and final-only `finalChecks`); `validateGraphChecks` reports a node
-whose `checks` name no configured profile (`unknown_check_profile`) and duplicate profile ids.
+`ModelRoute`, a thinking level, default `RunPolicy` and final-only `finalChecks`; duplicate profile ids
+are rejected); `validateGraphChecks` reports a node whose `checks` name no configured profile
+(`unknown_check_profile`).
 
 `run/report.ts` holds what a worker's final message must contain: `WorkReportSchema`
 (`summary`, `claims`, `limitations`) for producing roles and `ReviewReportSchema` (one

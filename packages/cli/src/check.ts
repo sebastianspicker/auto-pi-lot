@@ -8,7 +8,7 @@ import { createFingerprintCache, fingerprintWorkspace, runCheck } from "@auto-pi
 import { parseFlags } from "./args.js";
 import { loadConfig } from "./config.js";
 import { acquireRunLocks } from "./lock.js";
-import { runtimePaths } from "./paths.js";
+import { RUNTIME_DIR, runtimePaths } from "./paths.js";
 import { checkWorkspace } from "./run.js";
 
 export const CHECK_USAGE = "Usage: auto-pi-lot check [--workspace <dir>] [--config <file>] [--profile <id>]";
@@ -44,11 +44,7 @@ export async function runChecks(args: readonly string[]): Promise<number> {
     );
     return 1;
   }
-  if (new Set(loaded.config.checks.map((profile) => profile.id)).size !== loaded.config.checks.length) {
-    console.error("Check profile ids must be unique");
-    return 1;
-  }
-  const unlock = await acquireRunLocks([join(workspace, ".auto-pi-lot", "run.lock")], workspace);
+  const unlock = await acquireRunLocks([join(workspace, RUNTIME_DIR, "run.lock")], workspace);
   const controller = new AbortController();
   const cancel = (): void => controller.abort();
   process.on("SIGINT", cancel);

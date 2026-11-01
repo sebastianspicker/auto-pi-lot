@@ -103,7 +103,8 @@ export async function createPiSessionOpener(options: PiOpenerOptions = {}): Prom
   const route = { provider: resolved.provider, id: resolved.id };
 
   const opener = async (request: PiSessionRequest): Promise<CodingSession> => {
-    const settingsManager = SettingsManager.inMemory({ retry: { enabled: false } });
+    // No SDK retries and no cache-warming requests: both would be model calls the budget never sees.
+    const settingsManager = SettingsManager.inMemory({ retry: { enabled: false }, cacheWarming: "off" });
     const resourceLoader = new DefaultResourceLoader({
       cwd: request.cwd,
       agentDir,

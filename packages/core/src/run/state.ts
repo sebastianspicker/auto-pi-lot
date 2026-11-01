@@ -92,7 +92,8 @@ export interface RunState {
   readonly nodes: Readonly<Record<string, NodeRunState>>;
   readonly attempts: Readonly<Record<string, AttemptState>>;
   readonly permitsInUse: number;
-  readonly appliedEventIds: Readonly<Record<string, true>>;
+  /** Event ids in applied order; duplicates are detected with `includes`. */
+  readonly appliedEventIds: readonly string[];
   readonly lastFencingToken: number;
 }
 
@@ -125,7 +126,7 @@ export function initialState(): RunState {
     nodes: {},
     attempts: {},
     permitsInUse: 0,
-    appliedEventIds: {},
+    appliedEventIds: [],
     lastFencingToken: 0,
   };
 }

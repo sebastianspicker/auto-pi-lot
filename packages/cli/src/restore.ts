@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { unlink } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -17,9 +18,18 @@ export interface RestorePoint {
   readonly dirty: boolean;
 }
 
-/** The ref of a run's restore point; dots are escaped so a run ID can never form `..` or `.lock`. */
+/**
+ * The ref of a run's restore point; dots are escaped so a run ID can never form `..` or `.lock`.
+ * Escaping can push the name past the 255-byte limit of one ref component; such a name is
+ * shortened the way `encodeRunId` shortens a long file name.
+ */
 export function restoreRefFor(runId: string): string {
-  return `refs/auto-pi-lot/restore/${encodeRunId(runId).replaceAll(".", "%2e")}`;
+  const name = encodeRunId(runId).replaceAll(".", "%2e");
+  const fitted =
+    name.length <= 255
+      ? name
+      : `${name.slice(0, 200)}%%${createHash("sha256").update(runId).digest("hex").slice(0, 16)}`;
+  return `refs/auto-pi-lot/restore/${fitted}`;
 }
 
 const IDENTITY = {
@@ -39,6 +49,14 @@ async function required(cwd: string, args: readonly string[], env: NodeJS.Proces
 }
 
 /**
+ * Removes a restore point whose run never started, so the plan can run again under the same id.
+ * Git deletes the ref only while it still points at `point.commit`.
+ */
+export async function discardRestorePoint(point: RestorePoint): Promise<void> {
+  await required(point.root, ["update-ref", "-d", point.ref, point.commit]);
+}
+
+/**
  * Records the files of the repository containing `workspace` (tracked files as they are now,
  * plus untracked files that are not ignored, but not `.auto-pi-lot/`) as a commit whose parent is
  * HEAD, under `restoreRefFor(runId)`. Submodules are recorded as their commit, not their files.
@@ -50,6 +68,14 @@ export async function createRestorePoint(workspace: string, runId: string): Prom
   const gitDir = await required(root, ["rev-parse", "--absolute-git-dir"]);
   const headResult = await git(root, ["rev-parse", "--verify", "--quiet", "HEAD"]);
   const head = headResult.ok ? headResult.stdout.trim() : null;
+  const ref = restoreRefFor(runId);
+  // A run id reused after its journal was removed must not replace the snapshot taken before that run's edits.
+  const existing = await git(root, ["rev-parse", "--verify", "--quiet", ref]);
+  if (existing.ok) {
+    throw new Error(
+      `Run ${runId} already has a restore point at ${ref} (${existing.stdout.trim().slice(0, 12)}). Start a new run with --run-id <new id>; delete the old point with "git update-ref -d ${ref}" only if you no longer need it.`,
+    );
+  }
   const index = join(gitDir, `auto-pi-lot-restore-index-${process.pid}`);
   try {
     const env = { GIT_INDEX_FILE: index };
@@ -62,8 +88,8 @@ export async function createRestorePoint(workspace: string, runId: string): Prom
       ["commit-tree", tree, ...(head === null ? [] : ["-p", head]), "-m", `auto-pi-lot restore point for run ${runId}`],
       IDENTITY,
     );
-    const ref = restoreRefFor(runId);
-    await required(root, ["update-ref", ref, commit]);
+    // The empty old value makes git refuse if the ref appeared since the check above.
+    await required(root, ["update-ref", ref, commit, ""]);
     const dirty = head === null || tree !== (await required(root, ["rev-parse", `${head}^{tree}`]));
     return { ref, commit, root, dirty };
   } finally {

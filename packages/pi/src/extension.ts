@@ -261,7 +261,8 @@ export function createGraphCommand(deps: GraphCommandDeps = {}): GraphCommand {
     const lines = [`run ${text(report.runId)}: ${text(report.status)}`];
     if (isRecord(report.nodes)) {
       for (const [nodeId, node] of Object.entries(report.nodes)) {
-        lines.push(`  ${nodeId}: ${isRecord(node) ? text(node.disposition) : "?"}`);
+        // A pending or running node has no disposition yet; its execution state says where it is.
+        lines.push(`  ${nodeId}: ${isRecord(node) ? text(node.disposition ?? node.execution) : "?"}`);
       }
     }
     if (typeof report.sessions === "string") lines.push(`sessions: ${report.sessions}`);
@@ -350,13 +351,13 @@ export function createGraphCommand(deps: GraphCommandDeps = {}): GraphCommand {
 }
 
 /** Entry point. `/graph` starts, follows, cancels and inspects runs by driving the auto-pi-lot CLI as a child process. */
-export default function autoPiLot(pi: ExtensionAPI): void {
-  const graph = createGraphCommand();
+export default function autoPiLot(pi: ExtensionAPI, graph = createGraphCommand()): void {
   pi.registerCommand("graph", {
     description: "Start, follow, cancel and inspect auto-pi-lot graph runs",
     handler: graph.handler,
   });
-  pi.on("session_shutdown", () => {
-    graph.shutdown();
+  // Only quitting Pi cancels a run. `new`, `resume`, `fork` and `reload` replace the session; the run continues.
+  pi.on("session_shutdown", (event) => {
+    if (event.reason === "quit") graph.shutdown();
   });
 }

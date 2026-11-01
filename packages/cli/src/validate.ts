@@ -7,7 +7,10 @@ import {
   type ValidatedGraph,
   type ValidationIssue,
   validateGraph,
+  validateReviewLimits,
 } from "@auto-pi-lot/core";
+
+import { parseFlags } from "./args.js";
 
 export const VALIDATE_USAGE = "Usage: auto-pi-lot validate <graph.json> [--strict]";
 
@@ -20,19 +23,10 @@ export interface ValidateOptions {
 export function parseValidateArgs(
   args: readonly string[],
 ): { ok: true; options: ValidateOptions } | { ok: false; error: string } {
-  let file: string | null = null;
-  let strict = false;
-  for (const arg of args) {
-    if (arg === "--strict") {
-      strict = true;
-    } else if (arg.startsWith("--") || file !== null) {
-      return { ok: false, error: `Unknown or incomplete argument: ${arg}` };
-    } else {
-      file = arg;
-    }
-  }
-  if (file === null || file === "") return { ok: false, error: "Missing graph file" };
-  return { ok: true, options: { file, strict } };
+  const parsed = parseFlags(args, { values: [], switches: ["--strict"], positionals: 1 });
+  if (!parsed.ok) return parsed;
+  const [file = ""] = parsed.flags.positionals;
+  return { ok: true, options: { file, strict: parsed.flags.switches.has("--strict") } };
 }
 
 /** Largest graph file `validate` and `run --graph` read; a graph is small data, not an artifact. */
@@ -94,6 +88,11 @@ export async function runValidate(args: readonly string[]): Promise<number> {
     return 1;
   }
   const graph: ValidatedGraph = result.graph;
+  const limitIssues = validateReviewLimits(graph);
+  if (limitIssues.length > 0) {
+    printInvalidGraph(file, limitIssues);
+    return 1;
+  }
   const warnings = lintGraph(graph).map((warning) => ({
     code: warning.code,
     path: warning.path,

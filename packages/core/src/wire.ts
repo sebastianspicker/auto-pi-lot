@@ -23,7 +23,7 @@ export type IssueCode =
   | "delegation_beyond_depth"
   | "verifier_waits_for_acceptance"
   | "unknown_check_profile"
-  | "duplicate_check_profile";
+  | "review_limits";
 
 export interface ValidationIssue {
   code: IssueCode;

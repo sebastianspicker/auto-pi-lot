@@ -125,6 +125,25 @@ test("validate reports a cycle as an issue and exits 1", async () => {
   assert.ok(output.issues.some((issue: { code: string }) => issue.code === "cycle"));
 });
 
+test("validate and run refuse a reviewed producer whose criteria no review can cover", async () => {
+  const criteria = Array.from({ length: 65 }, (_, index) => `criterion ${index}`);
+  const file = await writeGraph(
+    graphOf(
+      "run-review-limits",
+      [{ ...node("impl", "implementer"), acceptanceCriteria: criteria }, node("review", "reviewer")],
+      [{ from: "impl", to: "review", condition: "result_ready" }],
+    ),
+  );
+  const validated = run("validate", file);
+  assert.equal(validated.status, 1);
+  assert.ok(JSON.parse(validated.stdout).issues.some((issue: { code: string }) => issue.code === "review_limits"));
+
+  const journal = await mkdtemp(join(tmpdir(), "auto-pi-lot-review-limits-"));
+  const started = run("run", "--worker", "fake", "--graph", file, "--journal", journal, "--dry-run");
+  assert.equal(started.status, 1, started.stderr);
+  assert.match(started.stdout, /review_limits/);
+});
+
 test("validate --strict turns warnings into exit 1", async () => {
   const file = await writeGraph(graphOf("run-strict", [node("only", "implementer")], []));
   const strict = run("validate", file, "--strict");

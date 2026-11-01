@@ -33,10 +33,10 @@
           AI model is involved.
         </p>
         <p class="status">
-          Today the core and a host exist: the host writes every decision to an append-only journal before acting on it
-          and recovers a run by replaying that journal, but it runs plans with stand-in workers only. Worker processes,
-          the supervisor, the SQLite store and the <code>/graph on</code> command aren't built yet, so none of these
-          runs did real work.
+          The host writes every decision to an append-only journal before acting on it and recovers a run by replaying
+          that journal. <code>run --worker pi</code> and the <code>/graph</code> command in Pi run real coding sessions
+          on a repository. The runs below are different: they replay scripted events, so none of them did real work.
+          Separate worker processes, the supervisor, the SQLite store and <code>/graph on</code> aren't built yet.
         </p>
       </div>
 

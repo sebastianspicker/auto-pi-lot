@@ -2,6 +2,7 @@ import {
   type ArtifactStore,
   type CheckProfile,
   type CodingSession,
+  criteriaMissing,
   DEFAULT_ATTEMPT_TIMEOUT_MS,
   digest,
   type EvidenceRecord,
@@ -27,7 +28,7 @@ import {
 import { runCheck } from "./check-runner.js";
 import { buildTaskPacket, type ConsumedResult, type RepairItem } from "./packet.js";
 import { toolsForRole } from "./tools.js";
-import { createFingerprintCache, fingerprintWorkspace } from "./workspace.js";
+import { changedPaths, createFingerprintCache, snapshotWorkspace, type WorkspaceSnapshot } from "./workspace.js";
 
 export const SYSTEM_PROMPT = [
   "You are a worker inside the auto-pi-lot harness. The harness gives you one task at a time.",
@@ -37,7 +38,6 @@ export const SYSTEM_PROMPT = [
 ].join("\n");
 
 export const USAGE_UNKNOWN_LIMITATION = "token usage was not reported for at least one call";
-export const CANCELLED_CHECK_NOTE = "[auto-pi-lot: check cancelled]";
 
 const LOG_TAIL_CHARS = 2000;
 const LOG_LINE_CHARS = 200;
@@ -58,6 +58,19 @@ export interface SessionOpenRequest {
 }
 export type SessionOpener = (request: SessionOpenRequest) => Promise<CodingSession>;
 
+/** The most changed paths a proposal lists; the schema allows no more. */
+const MAX_CHANGED_PATHS = 500;
+
+/** Package manifests, npm config and test files: listed first, so padding files cannot push them past the cap. */
+const CHECK_RELEVANT = /(^|\/)(package\.json|\.npmrc)$|test|spec/i;
+
+function checkRelevantFirst(paths: readonly string[]): string[] {
+  return [
+    ...paths.filter((entry) => CHECK_RELEVANT.test(entry)),
+    ...paths.filter((entry) => !CHECK_RELEVANT.test(entry)),
+  ];
+}
+
 export interface SessionWorkerOptions {
   workspace: string;
   checks: readonly CheckProfile[];
@@ -66,7 +79,7 @@ export interface SessionWorkerOptions {
   artifacts: ArtifactStore;
   clock?: () => Date;
   runCheck?: typeof runCheck;
-  fingerprint?: (root: string) => Promise<string>;
+  snapshot?: (root: string) => Promise<WorkspaceSnapshot>;
   /** Progress for the operator; never the packet, and never model text beyond 200 characters. */
   log?: (line: string) => void;
 }
@@ -97,6 +110,11 @@ export class SessionWorker implements WorkerPort {
   readonly #options: SessionWorkerOptions;
   readonly #attempts = new Map<string, Attempt>();
   readonly #fingerprintCache = createFingerprintCache();
+  /**
+   * Per run, the tree before the first attempt this worker ran. Changed paths are listed against
+   * it, so an edit a rejected attempt left behind still shows up for later reviewers.
+   */
+  readonly #runBase = new Map<string, WorkspaceSnapshot>();
 
   constructor(options: SessionWorkerOptions) {
     this.#options = options;
@@ -163,8 +181,8 @@ export class SessionWorker implements WorkerPort {
   async #run(assignment: WorkerAssignment, attempt: Attempt): Promise<WorkerOutcome> {
     const { node } = assignment;
     const { evidence, artifacts } = this.#options;
-    const fingerprint =
-      this.#options.fingerprint ?? ((root: string) => fingerprintWorkspace(root, { cache: this.#fingerprintCache }));
+    const snapshot =
+      this.#options.snapshot ?? ((root: string) => snapshotWorkspace(root, { cache: this.#fingerprintCache }));
     const clockOptions = this.#options.clock === undefined ? {} : { clock: this.#options.clock };
 
     // 1. Resolve the declared checks.
@@ -179,7 +197,9 @@ export class SessionWorker implements WorkerPort {
     }
 
     // 2. The tree before the session touches it.
-    const baseRevision = await fingerprint(this.#options.workspace);
+    const base = await snapshot(this.#options.workspace);
+    if (!this.#runBase.has(assignment.runId)) this.#runBase.set(assignment.runId, base);
+    const baseRevision = base.digest;
 
     // 3. Consumed results and repair evidence.
     const records = await evidence.listForRun(assignment.runId);
@@ -310,8 +330,7 @@ export class SessionWorker implements WorkerPort {
         // One verdict per acceptance criterion of the candidate's producer: a report that judges
         // other criteria is not a review of the candidate (decision 0010, item 4).
         if (review.ok && candidateCriteria !== null) {
-          const judged = new Set(review.value.verdicts.map((verdict) => verdict.criterion.trim()));
-          const missing = candidateCriteria.filter((criterion) => !judged.has(criterion.trim()));
+          const missing = criteriaMissing(candidateCriteria, review.value);
           if (missing.length > 0) {
             this.#say(`node ${node.id}: review skips criteria: ${missing.join("; ")}`);
             return { ok: false as const, issues: [] };
@@ -343,7 +362,8 @@ export class SessionWorker implements WorkerPort {
         const report = parsed.value;
 
         // 7. Read-only evidence is valid only while the observed source stays stable (decision 0013).
-        const resultRevision = await fingerprint(this.#options.workspace);
+        const result = await snapshot(this.#options.workspace);
+        const resultRevision = result.digest;
         if (attempt.checks.signal.aborted) return { type: "stopped" };
         const treeChanged = !isWriterRole(node.role) && resultRevision !== baseRevision;
         if (treeChanged) {
@@ -395,7 +415,7 @@ export class SessionWorker implements WorkerPort {
             await evidence.put(receipt);
             checkReceiptIds.push(receipt.id);
             this.#say(`check ${profile.id}: ${receipt.outcome}`);
-            if ((await fingerprint(this.#options.workspace)) !== resultRevision) {
+            if ((await snapshot(this.#options.workspace)).digest !== resultRevision) {
               this.#say(`node ${node.id}: workspace changed during check ${profile.id}; evidence cannot be accepted`);
               return failed("effect_uncertain");
             }
@@ -408,7 +428,14 @@ export class SessionWorker implements WorkerPort {
 
         // 9. The proposal.
         if (attempt.checks.signal.aborted) return { type: "stopped" };
-        const limitations = [...report.limitations, ...(usageUnknown ? [USAGE_UNKNOWN_LIMITATION] : [])];
+        const changed = checkRelevantFirst(changedPaths(this.#runBase.get(assignment.runId) ?? base, result));
+        const limitations = [
+          ...report.limitations,
+          ...(usageUnknown ? [USAGE_UNKNOWN_LIMITATION] : []),
+          ...(changed.length > MAX_CHANGED_PATHS
+            ? [`${changed.length - MAX_CHANGED_PATHS} more changed paths not listed`]
+            : []),
+        ];
         const proposal = identifyEvidence<ResultProposal>({
           kind: "proposal",
           schemaVersion: 1,
@@ -426,6 +453,7 @@ export class SessionWorker implements WorkerPort {
           inputFingerprint: digest({ consumes: assignment.consumes, baseRevision }),
           baseRevision,
           resultRevision,
+          changedPaths: changed.slice(0, MAX_CHANGED_PATHS),
         });
         const valid = parseDto(ResultProposalSchema, proposal);
         if (!valid.ok) throw new Error(`proposal is invalid: ${JSON.stringify(valid.issues)}`);

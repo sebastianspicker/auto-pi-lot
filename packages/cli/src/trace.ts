@@ -1,44 +1,25 @@
 import {
-  type AttemptStatus,
   type Command,
   canonicalJson,
   type DispatchCommand,
   decide,
-  type ExecutionState,
   type FailureCategory,
   type GraphSpec,
   initialState,
   type JournalEvent,
-  type ResultDisposition,
   type RunPolicy,
   type RunState,
   replay,
 } from "@auto-pi-lot/core";
 
 import { demoGraphInput } from "./demo.js";
+import { type AttemptSummary, type NodeSummary, summarizeAttempts, summarizeNodes } from "./summary.js";
 
 /** Fixed start of the deterministic clock every scenario's events are stamped with. */
 const BASE_TIME = Date.parse("2026-01-01T00:00:00.000Z");
 
 /** One node's state as shown in a trace step, taken after that step applied. */
-interface NodeSnapshot {
-  readonly execution: ExecutionState;
-  readonly disposition: ResultDisposition | null;
-  readonly attemptCount: number;
-  readonly invalidatedAttemptCount: number;
-  readonly failureCategory: FailureCategory | null;
-  readonly activeAttemptId: string | null;
-}
-
-/** One attempt's state as shown in a trace step, taken after that step applied. */
-interface AttemptSnapshot {
-  readonly nodeId: string;
-  readonly fencingToken: number;
-  readonly status: AttemptStatus;
-  /** Producer node ID -> the producer attempt this attempt consumed (decision 0005). */
-  readonly consumes: Readonly<Record<string, string>>;
-  readonly invalidated: boolean;
-}
+type NodeSnapshot = NodeSummary & { readonly activeAttemptId: string | null };
 
 interface StepTrace {
   readonly index: number;
@@ -50,7 +31,7 @@ interface StepTrace {
   readonly run: { readonly status: string; readonly permitsInUse: number };
   readonly nodes: Readonly<Record<string, NodeSnapshot>>;
   /** Every attempt the reducer knows after this step, by attempt id (format 3). */
-  readonly attempts: Readonly<Record<string, AttemptSnapshot>>;
+  readonly attempts: Readonly<Record<string, AttemptSummary>>;
 }
 
 interface ScenarioTrace {
@@ -140,8 +121,8 @@ class ScenarioContext {
     return { type: "attempt_dispatched", ...this.base(), nodeId, attemptId, fencingToken };
   }
 
-  resultProposed(attemptId: string, fencingToken: number, proposalDigest = "sha256:proposal"): JournalEvent {
-    return { type: "result_proposed", ...this.base(), attemptId, fencingToken, proposalDigest };
+  resultProposed(attemptId: string, fencingToken: number): JournalEvent {
+    return { type: "result_proposed", ...this.base(), attemptId, fencingToken, proposalDigest: "sha256:proposal" };
   }
 
   acceptanceDecided(
@@ -169,34 +150,30 @@ class ScenarioContext {
 /** Records are built from entries so an id such as `__proto__` becomes an own key, never a prototype write. */
 function snapshotNodes(state: RunState): Record<string, NodeSnapshot> {
   return Object.fromEntries(
-    Object.entries(state.nodes).map(([nodeId, node]): [string, NodeSnapshot] => [
+    Object.entries(summarizeNodes(state)).map(([nodeId, summary]): [string, NodeSnapshot] => [
       nodeId,
-      {
-        execution: node.execution,
-        disposition: node.disposition,
-        attemptCount: node.attemptCount,
-        invalidatedAttemptCount: node.invalidatedAttemptCount,
-        failureCategory: node.failureCategory,
-        activeAttemptId: node.activeAttemptId,
-      },
+      { ...summary, activeAttemptId: state.nodes[nodeId]?.activeAttemptId ?? null },
     ]),
   );
 }
 
-function snapshotAttempts(state: RunState): Record<string, AttemptSnapshot> {
-  return Object.fromEntries(
-    Object.entries(state.attempts).map(([attemptId, attempt]): [string, AttemptSnapshot] => [
-      attemptId,
-      {
-        nodeId: attempt.nodeId,
-        fencingToken: attempt.fencingToken,
-        status: attempt.status,
-        consumes: { ...attempt.consumes },
-        invalidated: attempt.invalidated,
-      },
-    ]),
-  );
-}
+const dispatched = (nodeId: string, note: string): Action => ({
+  note,
+  expect: "applied",
+  build: (ctx) => {
+    const d = ctx.dispatchFor(nodeId);
+    return ctx.attemptDispatched(nodeId, d.attemptId, d.fencingToken);
+  },
+});
+
+const proposed = (nodeId: string, note: string): Action => ({
+  note,
+  expect: "applied",
+  build: (ctx) => {
+    const d = ctx.dispatchFor(nodeId);
+    return ctx.resultProposed(d.attemptId, d.fencingToken);
+  },
+});
 
 /**
  * Runs one scripted host scenario through the real `decide` reducer, recording every step
@@ -240,7 +217,7 @@ function runScenario(params: {
       commands: result.commands,
       run: { status: state.status, permitsInUse: state.permitsInUse },
       nodes: snapshotNodes(state),
-      attempts: snapshotAttempts(state),
+      attempts: summarizeAttempts(state),
     });
   });
 
@@ -279,30 +256,12 @@ function happyPathScenario(): ScenarioTrace {
       expect: "applied",
       build: (ctx) => ctx.runStarted(graph, policy),
     },
-    {
-      note: "The host reports that implement's attempt has started.",
-      expect: "applied",
-      build: (ctx) => {
-        const d = ctx.dispatchFor("implement");
-        return ctx.attemptDispatched("implement", d.attemptId, d.fencingToken);
-      },
-    },
-    {
-      note: "implement proposes a result. It is now verifying: the host can't accept it until verify has an accepted result for this attempt, so the reducer asks for no decision yet. verify can start, bound to this attempt of implement.",
-      expect: "applied",
-      build: (ctx) => {
-        const d = ctx.dispatchFor("implement");
-        return ctx.resultProposed(d.attemptId, d.fencingToken);
-      },
-    },
-    {
-      note: "verify's attempt starts. It checks implement's first attempt, which nobody has accepted.",
-      expect: "applied",
-      build: (ctx) => {
-        const d = ctx.dispatchFor("verify");
-        return ctx.attemptDispatched("verify", d.attemptId, d.fencingToken);
-      },
-    },
+    dispatched("implement", "The host reports that implement's attempt has started."),
+    proposed(
+      "implement",
+      "implement proposes a result. It is now verifying: the host can't accept it until verify has an accepted result for this attempt, so the reducer asks for no decision yet. verify can start, bound to this attempt of implement.",
+    ),
+    dispatched("verify", "verify's attempt starts. It checks implement's first attempt, which nobody has accepted."),
     {
       note: "The host tries to accept implement's result and cites a check receipt. The reducer rejects it as verification_incomplete: the host can't accept implement before its verifier has accepted evidence.",
       expect: "rejected",
@@ -311,14 +270,7 @@ function happyPathScenario(): ScenarioTrace {
         return ctx.acceptanceDecided("implement", d.attemptId, "accepted", ["check-implement-1"]);
       },
     },
-    {
-      note: "verify proposes a result. The reducer asks the host to evaluate it.",
-      expect: "applied",
-      build: (ctx) => {
-        const d = ctx.dispatchFor("verify");
-        return ctx.resultProposed(d.attemptId, d.fencingToken);
-      },
-    },
+    proposed("verify", "verify proposes a result. The reducer asks the host to evaluate it."),
     {
       note: "The host accepts verify's result and cites a receipt. Now the reducer asks for implement's acceptance, and it dispatches review, which needed verify accepted.",
       expect: "applied",
@@ -335,22 +287,8 @@ function happyPathScenario(): ScenarioTrace {
         return ctx.acceptanceDecided("implement", d.attemptId, "accepted", ["check-implement-1"]);
       },
     },
-    {
-      note: "review's attempt starts.",
-      expect: "applied",
-      build: (ctx) => {
-        const d = ctx.dispatchFor("review");
-        return ctx.attemptDispatched("review", d.attemptId, d.fencingToken);
-      },
-    },
-    {
-      note: "review proposes a result. Once the host decides on it, the run is over.",
-      expect: "applied",
-      build: (ctx) => {
-        const d = ctx.dispatchFor("review");
-        return ctx.resultProposed(d.attemptId, d.fencingToken);
-      },
-    },
+    dispatched("review", "review's attempt starts."),
+    proposed("review", "review proposes a result. Once the host decides on it, the run is over."),
     {
       note: "The host accepts review's result. All three tasks are accepted, so the run ends as succeeded.",
       expect: "applied",
@@ -413,14 +351,7 @@ function retryAndFencingScenario(): ScenarioTrace {
       expect: "applied",
       build: (ctx) => ctx.runStarted(graph, policy),
     },
-    {
-      note: "implement's first attempt starts.",
-      expect: "applied",
-      build: (ctx) => {
-        const d = ctx.dispatchFor("implement");
-        return ctx.attemptDispatched("implement", d.attemptId, d.fencingToken);
-      },
-    },
+    dispatched("implement", "implement's first attempt starts."),
     {
       note: "The first attempt crashes. implement has attempts left, so the reducer schedules a retry with a new attempt ID and a higher fencing token.",
       expect: "applied",
@@ -429,14 +360,7 @@ function retryAndFencingScenario(): ScenarioTrace {
         return ctx.attemptFailed(d.attemptId, d.fencingToken, "worker_crashed");
       },
     },
-    {
-      note: "The retry starts.",
-      expect: "applied",
-      build: (ctx) => {
-        const d = ctx.dispatchFor("implement");
-        return ctx.attemptDispatched("implement", d.attemptId, d.fencingToken);
-      },
-    },
+    dispatched("implement", "The retry starts."),
     {
       note: "A late result arrives from the first attempt, which already crashed. The reducer doesn't mistake it for the retry's result and rejects it as invalid_transition.",
       expect: "rejected",
@@ -469,22 +393,8 @@ function retryAndFencingScenario(): ScenarioTrace {
         return ctx.acceptanceDecided("implement", retryAttempt.attemptId, "rejected", []);
       },
     },
-    {
-      note: "implement's third and last attempt starts.",
-      expect: "applied",
-      build: (ctx) => {
-        const d = ctx.dispatchFor("implement");
-        return ctx.attemptDispatched("implement", d.attemptId, d.fencingToken);
-      },
-    },
-    {
-      note: "The third attempt proposes a result.",
-      expect: "applied",
-      build: (ctx) => {
-        const d = ctx.dispatchFor("implement");
-        return ctx.resultProposed(d.attemptId, d.fencingToken);
-      },
-    },
+    dispatched("implement", "implement's third and last attempt starts."),
+    proposed("implement", "The third attempt proposes a result."),
     {
       note: "The host accepts implement's result. downstream was waiting for that, so the reducer dispatches it.",
       expect: "applied",
@@ -493,22 +403,8 @@ function retryAndFencingScenario(): ScenarioTrace {
         return ctx.acceptanceDecided("implement", d.attemptId, "accepted", ["check-implement-3"]);
       },
     },
-    {
-      note: "downstream's attempt starts.",
-      expect: "applied",
-      build: (ctx) => {
-        const d = ctx.dispatchFor("downstream");
-        return ctx.attemptDispatched("downstream", d.attemptId, d.fencingToken);
-      },
-    },
-    {
-      note: "downstream proposes a result.",
-      expect: "applied",
-      build: (ctx) => {
-        const d = ctx.dispatchFor("downstream");
-        return ctx.resultProposed(d.attemptId, d.fencingToken);
-      },
-    },
+    dispatched("downstream", "downstream's attempt starts."),
+    proposed("downstream", "downstream proposes a result."),
     {
       note: "The host accepts downstream's result. Both tasks are accepted, so the run ends as succeeded.",
       expect: "applied",
@@ -580,30 +476,9 @@ function cancellationScenario(): ScenarioTrace {
       expect: "applied",
       build: (ctx) => ctx.runStarted(graph, policy),
     },
-    {
-      note: "lint's attempt starts.",
-      expect: "applied",
-      build: (ctx) => {
-        const d = ctx.dispatchFor("lint");
-        return ctx.attemptDispatched("lint", d.attemptId, d.fencingToken);
-      },
-    },
-    {
-      note: "test's attempt starts.",
-      expect: "applied",
-      build: (ctx) => {
-        const d = ctx.dispatchFor("test");
-        return ctx.attemptDispatched("test", d.attemptId, d.fencingToken);
-      },
-    },
-    {
-      note: "lint proposes a result. The host hasn't decided on it yet when the operator cancels.",
-      expect: "applied",
-      build: (ctx) => {
-        const d = ctx.dispatchFor("lint");
-        return ctx.resultProposed(d.attemptId, d.fencingToken);
-      },
-    },
+    dispatched("lint", "lint's attempt starts."),
+    dispatched("test", "test's attempt starts."),
+    proposed("lint", "lint proposes a result. The host hasn't decided on it yet when the operator cancels."),
     {
       note: "The operator cancels the run. The reducer tells the host to stop test's attempt and cancels package, which hadn't started. lint's result still needs an answer. Nothing new is dispatched.",
       expect: "applied",
@@ -690,23 +565,6 @@ const repairGraph: GraphSpec = {
 function repairScenario(): ScenarioTrace {
   const graph = repairGraph;
   const policy: RunPolicy = { maxConcurrent: 2, maxAttemptsPerNode: 3 };
-
-  const dispatched = (nodeId: string, note: string): Action => ({
-    note,
-    expect: "applied",
-    build: (ctx) => {
-      const d = ctx.dispatchFor(nodeId);
-      return ctx.attemptDispatched(nodeId, d.attemptId, d.fencingToken);
-    },
-  });
-  const proposed = (nodeId: string, note: string): Action => ({
-    note,
-    expect: "applied",
-    build: (ctx) => {
-      const d = ctx.dispatchFor(nodeId);
-      return ctx.resultProposed(d.attemptId, d.fencingToken);
-    },
-  });
 
   const actions: Action[] = [
     {

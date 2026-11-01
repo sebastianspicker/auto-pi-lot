@@ -8,7 +8,12 @@ import { ReviewVerdictSchema } from "./evidence.js";
  * report, which costs the attempt (`schema_invalid`). Both are bounded so a runaway reply cannot
  * grow a record without limit. Neither can carry an acceptance: the host decides that.
  */
-const shortText = z.string().trim().min(1).max(2000);
+/** Longest text a report field may hold, a review's verbatim criterion included. */
+export const MAX_REPORT_TEXT = 2000;
+/** Most verdicts one review may give: one per acceptance criterion of the candidate's producer. */
+export const MAX_REVIEW_VERDICTS = 64;
+
+const shortText = z.string().trim().min(1).max(MAX_REPORT_TEXT);
 
 /** A producer's (planner, explorer, implementer, integrator) report about its own work. */
 export const WorkReportSchema = z.strictObject({
@@ -29,10 +34,23 @@ export const ReviewReportSchema = z.strictObject({
       }),
     )
     .min(1)
-    .max(64),
+    .max(MAX_REVIEW_VERDICTS),
   limitations: z.array(shortText).max(32),
 });
 export type ReviewReport = z.infer<typeof ReviewReportSchema>;
+
+/**
+ * The producer's acceptance criteria that `review` has no verdict for (exact text after
+ * trimming). The worker uses it on a report and the gate on a stored receipt, so both apply
+ * the same rule (decision 0010, item 4).
+ */
+export function criteriaMissing(
+  criteria: readonly string[],
+  review: { readonly verdicts: readonly { readonly criterion: string }[] },
+): string[] {
+  const judged = new Set(review.verdicts.map((verdict) => verdict.criterion.trim()));
+  return criteria.map((criterion) => criterion.trim()).filter((criterion) => !judged.has(criterion));
+}
 
 /**
  * Finds the last fenced ```json block in a message and returns its parsed value, or `null` when

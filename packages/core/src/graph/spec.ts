@@ -46,7 +46,6 @@ export const NodeSpecSchema = z.strictObject({
   role: RoleSchema,
   objective: z.string().trim().min(1),
   acceptanceCriteria: z.array(z.string().trim().min(1)).min(1),
-  inputArtifactIds: z.array(IdSchema).optional(),
   /**
    * Check profile ids (see `CheckProfileSchema`) the host runs against the workspace after each
    * attempt of this node; every one must pass before the result can be accepted. Omitted or

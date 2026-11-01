@@ -41,6 +41,13 @@ export const ResultProposalSchema = z
     inputFingerprint: IdSchema,
     baseRevision: IdSchema.optional(),
     resultRevision: IdSchema.optional(),
+    /**
+     * Workspace paths changed since the run's first attempt in this worker process, as of this
+     * result (earlier attempts' edits included), relative to the workspace and `/`-separated:
+     * package manifests, npm config and test files first, each group sorted. Written by
+     * host-side worker code, never by the model; optional so stored proposals still load.
+     */
+    changedPaths: z.array(z.string().min(1).max(4096)).max(500).optional(),
   })
   .superRefine((proposal, context) => {
     if (proposal.baseRevision !== undefined && proposal.resultRevision === undefined) {
@@ -118,12 +125,6 @@ export type ReviewReceipt = z.infer<typeof ReviewReceiptSchema>;
 export const AcceptanceDecisionSchema = z.enum(["accepted", "rejected"]);
 export type AcceptanceDecision = z.infer<typeof AcceptanceDecisionSchema>;
 
-export const InvalidationSchema = z.strictObject({
-  reason: z.string().trim().min(1),
-  at: z.iso.datetime(),
-});
-export type Invalidation = z.infer<typeof InvalidationSchema>;
-
 /** The host's own decision, tied to the exact candidate/input and required receipts. */
 export const AcceptanceRecordSchema = z
   .strictObject({
@@ -144,7 +145,6 @@ export const AcceptanceRecordSchema = z
     decidedAt: z.iso.datetime(),
     /** The gate's explanation, for operators. */
     reasons: z.array(z.string().trim().min(1).max(2000)).max(32).optional(),
-    invalidation: InvalidationSchema.optional(),
   })
   .superRefine((record, context) => {
     if (record.decision === "accepted" && record.checkReceiptIds.length === 0 && record.reviewReceiptIds.length === 0) {

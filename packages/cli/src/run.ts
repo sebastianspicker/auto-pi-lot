@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 
 import {
+  type CheckProfile,
   type CheckReceipt,
   canonicalJson,
   DEFAULT_ATTEMPT_TIMEOUT_MS,
@@ -12,9 +13,11 @@ import {
   type ExecutionManifest,
   type GraphSpec,
   type JournalEvent,
+  type JournalStore,
   lintGraph,
   type ModelRoute,
   ModelRouteSchema,
+  type PinnedCheckProfile,
   type ProjectConfig,
   parseDto,
   type RunPolicy,
@@ -27,6 +30,7 @@ import {
   type ValidationIssue,
   validateGraph,
   validateGraphChecks,
+  validateReviewLimits,
 } from "@auto-pi-lot/core";
 import {
   EvidenceGate,
@@ -41,7 +45,7 @@ import {
   ScriptedWorker,
 } from "@auto-pi-lot/host";
 import { createPiSessionOpener } from "@auto-pi-lot/pi";
-import { buildCheckEnv, SessionWorker, WorkspaceVerifier } from "@auto-pi-lot/worker";
+import { buildCheckEnv, checkDefinitionDigest, SessionWorker, WorkspaceVerifier } from "@auto-pi-lot/worker";
 
 import { parseFlags, positiveInteger } from "./args.js";
 import { EMPTY_CONFIG, loadConfig } from "./config.js";
@@ -49,8 +53,8 @@ import { demoGraphInput } from "./demo.js";
 import { type AttemptEvidence, summarizeEvidence } from "./evidence-summary.js";
 import { isGitWorkTree } from "./git.js";
 import { acquireRunLocks } from "./lock.js";
-import { runtimePaths, sessionDirFor } from "./paths.js";
-import { createRestorePoint, type RestorePoint } from "./restore.js";
+import { RUNTIME_DIR, runtimePaths, sessionDirFor } from "./paths.js";
+import { createRestorePoint, discardRestorePoint, type RestorePoint } from "./restore.js";
 import {
   attemptNodes,
   type EventSummary,
@@ -63,9 +67,6 @@ import { printInvalidGraph, readJsonFile } from "./validate.js";
 
 export const RUN_USAGE =
   "Usage: auto-pi-lot run [--graph <file> [--run-id <id>] | --resume <runId>] [--worker fake|pi] [--workspace <dir>] [--config <file>] [--model <provider/id>] [--thinking off|low|medium|high] [--journal <dir>] [--max-concurrent <n>] [--max-attempts <n>] [--max-writers <n>] [--allow-warnings] [--quiet] [--dry-run]";
-
-/** Where `run` journals by default, relative to the workspace: the gitignored local runtime directory. */
-export const DEFAULT_JOURNAL_DIR = ".auto-pi-lot/journal";
 
 /** Bounds the example run: two slots, and one retry per task so the scripted crash can be retried. */
 const FAKE_POLICY: RunPolicy = { maxConcurrent: 2, maxAttemptsPerNode: 2 };
@@ -308,6 +309,45 @@ async function exists(path: string): Promise<boolean> {
 }
 
 /**
+ * The check profiles a new Pi run records in its manifest: defaults filled in, and every `npm`
+ * profile pinned to what it runs now (decision 0016).
+ */
+export async function pinChecks(workspace: string, checks: readonly CheckProfile[]): Promise<PinnedCheckProfile[]> {
+  return Promise.all(
+    checks.map(async (profile) => {
+      let definitionDigest: string | null;
+      try {
+        definitionDigest = await checkDefinitionDigest(workspace, profile);
+      } catch (error) {
+        throw new Error(`Cannot pin check ${profile.id}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+      return {
+        ...profile,
+        cwd: profile.cwd ?? ".",
+        timeoutMs: profile.timeoutMs ?? DEFAULT_CHECK_TIMEOUT_MS,
+        ...(definitionDigest === null ? {} : { definitionDigest }),
+      };
+    }),
+  );
+}
+
+/**
+ * A run that stopped before `run_started` reached its journal edited nothing; its restore point
+ * would only make a retry under the same id fail. When in doubt the point is kept.
+ */
+export async function dropUnusedRestorePoint(
+  point: RestorePoint,
+  journal: Pick<JournalStore, "read">,
+  runId: string,
+): Promise<void> {
+  try {
+    if ((await journal.read(runId)).events.length === 0) await discardRestorePoint(point);
+  } catch {
+    // An unreadable journal or a moved ref: keep the snapshot.
+  }
+}
+
+/**
  * Reads a plan file, applies a `--run-id` override, and validates it; prints the problem and
  * returns the exit code on failure.
  */
@@ -367,8 +407,8 @@ export async function runRun(args: readonly string[]): Promise<number> {
     !isAbsolute(journalRelative) &&
     journalRelative !== ".." &&
     !journalRelative.startsWith(`..${sep}`) &&
-    journalRelative !== ".auto-pi-lot" &&
-    !journalRelative.startsWith(`.auto-pi-lot${sep}`)
+    journalRelative !== RUNTIME_DIR &&
+    !journalRelative.startsWith(`${RUNTIME_DIR}${sep}`)
   ) {
     console.error(
       "A Pi journal inside the workspace must be under .auto-pi-lot; use the default or a directory outside the workspace so journal writes do not change source fingerprints",
@@ -479,9 +519,13 @@ export async function runRun(args: readonly string[]): Promise<number> {
     console.error("Pi runs share one workspace and require --max-writers 1");
     return 1;
   }
-  const unknownChecks = usePi ? validateGraphChecks(graph, config.checks) : [];
-  if (unknownChecks.length > 0) {
-    printIssues(options.graphFile ?? options.resume ?? "", unknownChecks);
+  // A resumed run keeps the plan its journal recorded; review limits are checked when a run is admitted.
+  const planIssues = [
+    ...(usePi ? validateGraphChecks(graph, config.checks) : []),
+    ...(resumed ? [] : validateReviewLimits(graph)),
+  ];
+  if (planIssues.length > 0) {
+    printIssues(options.graphFile ?? options.resume ?? "", planIssues);
     return 1;
   }
   const finalCheckIds =
@@ -501,7 +545,7 @@ export async function runRun(args: readonly string[]): Promise<number> {
     );
     return 1;
   }
-  const locks = [join(paths.journal, ".writer.lock"), ...(usePi ? [join(workspace, ".auto-pi-lot", "run.lock")] : [])];
+  const locks = [join(paths.journal, ".writer.lock"), ...(usePi ? [join(workspace, RUNTIME_DIR, "run.lock")] : [])];
   for (const file of locks) {
     if (await exists(file)) {
       console.error(
@@ -559,6 +603,8 @@ export async function runRun(args: readonly string[]): Promise<number> {
   let sessionWorker: SessionWorker | undefined;
   let verifier: WorkspaceVerifier | undefined;
   let host: RunHost | undefined;
+  let restorePoint: RestorePoint | undefined;
+  const runId = graph.runId;
   let interrupts = 0;
   const onSignal = (): void => {
     interrupts += 1;
@@ -589,7 +635,6 @@ export async function runRun(args: readonly string[]): Promise<number> {
 
     let ports: HostPorts;
     let route: ModelRoute | undefined;
-    let restorePoint: RestorePoint | undefined;
     const sessionDir = sessionDirFor(paths, graph.runId);
     if (usePi) {
       const model = options.model ?? config.model;
@@ -634,11 +679,7 @@ export async function runRun(args: readonly string[]): Promise<number> {
         workspace,
         model: route,
         thinkingLevel,
-        checks: config.checks.map((profile) => ({
-          ...profile,
-          cwd: profile.cwd ?? ".",
-          timeoutMs: profile.timeoutMs ?? DEFAULT_CHECK_TIMEOUT_MS,
-        })),
+        checks: await pinChecks(workspace, config.checks),
         finalCheckIds,
       };
       if (execution.worker === "pi") config = { ...config, checks: execution.checks };
@@ -750,6 +791,7 @@ export async function runRun(args: readonly string[]): Promise<number> {
     try {
       await sessionWorker?.shutdown();
       await verifier?.shutdown();
+      if (restorePoint !== undefined && host === undefined) await dropUnusedRestorePoint(restorePoint, journal, runId);
       await unlock();
     } finally {
       process.off("SIGINT", onSignal);

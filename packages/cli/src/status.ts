@@ -131,7 +131,9 @@ export async function runStatus(args: readonly string[]): Promise<number> {
     }
   }
   const store = new FileJournalStore(directory);
-  const entries = await Promise.all(files.map((file) => listing(store, file, directory)));
+  // One journal at a time: each listing holds a 1 MiB first-record buffer and replays the whole file.
+  const entries: (RunListing | RunListingError)[] = [];
+  for (const file of files) entries.push(await listing(store, file, directory));
   const runs = entries.sort((a, b) => {
     if ("error" in a || "error" in b) return "error" in a ? ("error" in b ? 0 : 1) : -1;
     return a.lastEventAt < b.lastEventAt ? 1 : a.lastEventAt > b.lastEventAt ? -1 : 0;

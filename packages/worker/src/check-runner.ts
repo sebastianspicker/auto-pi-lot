@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
-import { realpath } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { readFile, realpath } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -11,6 +12,7 @@ import {
   DEFAULT_CHECK_TIMEOUT_MS,
   digest,
   identifyEvidence,
+  type PinnedCheckProfile,
   parseDto,
   type TestCount,
 } from "@auto-pi-lot/core";
@@ -194,12 +196,80 @@ interface Finished {
   readonly exitCode: number | null;
 }
 
+async function readOptional(file: string): Promise<string | null> {
+  try {
+    return await readFile(file, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+/**
+ * What npm reads when it runs a script from `cwd`: the nearest package.json at or above `cwd`
+ * (npm walks up to it) and every .npmrc from `cwd` up to the workspace root. Directories are
+ * relative to the root, so the result does not depend on where the workspace lives.
+ */
+async function npmInputs(
+  root: string,
+  cwd: string,
+): Promise<{ packageDir: string | null; packageJson: string | null; npmrc: [string, string][] }> {
+  let packageDir: string | null = null;
+  let packageJson: string | null = null;
+  const npmrc: [string, string][] = [];
+  for (let dir = cwd; ; dir = path.dirname(dir)) {
+    if (packageJson === null) {
+      packageJson = await readOptional(path.join(dir, "package.json"));
+      if (packageJson !== null) packageDir = path.relative(root, dir);
+    }
+    const rc = await readOptional(path.join(dir, ".npmrc"));
+    if (rc !== null) npmrc.push([path.relative(root, dir), rc]);
+    if (dir === root || !insideWorkspace(root, dir) || path.dirname(dir) === dir) break;
+  }
+  return { packageDir, packageJson, npmrc };
+}
+
+/**
+ * Fingerprints what an `npm` check can run: every script and the `config` block of the nearest
+ * package.json (a script may call other scripts or read `$npm_package_config_*`) and every .npmrc
+ * from the check's directory up to the workspace root. Dependencies and other fields are left out,
+ * so a task may still add a package. Null for any command other than `npm` (decision 0016).
+ */
+export async function checkDefinitionDigest(workspace: string, profile: CheckProfile): Promise<string | null> {
+  if (profile.command !== "npm") return null;
+  const root = path.resolve(workspace);
+  const { packageDir, packageJson, npmrc } = await npmInputs(root, path.resolve(root, profile.cwd ?? "."));
+  if (packageJson === null) return digest({ packageDir, scripts: null, config: null, npmrc });
+  let manifest: unknown;
+  try {
+    manifest = JSON.parse(packageJson);
+  } catch {
+    manifest = undefined;
+  }
+  if (typeof manifest !== "object" || manifest === null || Array.isArray(manifest)) {
+    // Unparsable: any byte change must still be detected.
+    return digest({ packageDir, rawPackageJson: createHash("sha256").update(packageJson).digest("hex"), npmrc });
+  }
+  const field = (key: string): unknown =>
+    Object.hasOwn(manifest, key) ? (manifest as Record<string, unknown>)[key] : null;
+  return digest({ packageDir, scripts: field("scripts"), config: field("config"), npmrc });
+}
+
+/** Null when the pinned definition still matches; otherwise a (possibly empty) detail for the log. */
+async function definitionChanged(profile: PinnedCheckProfile, workspace: string): Promise<string | null> {
+  try {
+    return (await checkDefinitionDigest(workspace, profile)) === profile.definitionDigest ? null : "";
+  } catch (error) {
+    return `: ${(error as Error).message}`;
+  }
+}
+
 /**
  * Runs one check profile in the workspace and returns its receipt. The command is one executable
  * and an argument list (no shell), run with an allowlisted environment under a timeout that kills
  * the whole process group. The outcome comes from the real exit status, never from a model.
  */
-export async function runCheck(profile: CheckProfile, input: RunCheckInput): Promise<CheckReceipt> {
+export async function runCheck(profile: PinnedCheckProfile, input: RunCheckInput): Promise<CheckReceipt> {
   const clock = input.clock ?? (() => new Date());
   const spawnChild = input.spawn ?? defaultSpawn;
   const signal = input.kill ?? ((pid: number, name: NodeJS.Signals) => process.kill(pid, name));
@@ -212,8 +282,15 @@ export async function runCheck(profile: CheckProfile, input: RunCheckInput): Pro
   let finished: Finished;
   // Lexically inside, and really inside once symbolic links are resolved; a missing cwd is an error.
   const confined = insideWorkspace(workspace, cwd) && (await reallyInside(workspace, cwd));
+  const changed =
+    confined && profile.definitionDigest !== undefined ? await definitionChanged(profile, workspace) : null;
   if (!confined) {
     log.push(`[auto-pi-lot: check not run: cwd ${JSON.stringify(profile.cwd)} is outside the workspace]\n`);
+    finished = { outcome: "error", exitCode: null };
+  } else if (changed !== null) {
+    log.push(
+      `[auto-pi-lot: check not run: the package.json scripts or config, or an .npmrc, changed since the run started${changed}]\n`,
+    );
     finished = { outcome: "error", exitCode: null };
   } else if (input.signal?.aborted === true) {
     log.push(`${CANCELLED_NOTE}\n`);

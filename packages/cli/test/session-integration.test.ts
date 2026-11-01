@@ -6,7 +6,7 @@ import test from "node:test";
 
 import { type CodingSession, canonicalJson, type GraphSpec, replay, type SessionEvent } from "@auto-pi-lot/core";
 import { EvidenceGate, FileArtifactStore, FileEvidenceStore, FileJournalStore, RunHost } from "@auto-pi-lot/host";
-import { SessionWorker, WorkspaceVerifier } from "@auto-pi-lot/worker";
+import { checkDefinitionDigest, SessionWorker, WorkspaceVerifier } from "@auto-pi-lot/worker";
 
 /** Only the model is scripted. Workspace reads/writes, subprocess checks, storage and acceptance are real. */
 function session(work: (packet: string) => Promise<object>): CodingSession {
@@ -218,3 +218,61 @@ for (const repair of [false, true]) {
     assert.equal(writes, repair ? 2 : 1);
   });
 }
+
+test("an attempt that rewrites the pinned npm script is refused by the check and not accepted", {
+  timeout: 15_000,
+}, async (t) => {
+  const workspace = await mkdtemp(join(tmpdir(), "apl-pinned-"));
+  t.after(() => rm(workspace, { recursive: true, force: true }));
+  const packageJson = join(workspace, "package.json");
+  await writeFile(packageJson, JSON.stringify({ scripts: { test: "node check.js" } }));
+  const runtime = join(workspace, ".auto-pi-lot");
+  const journal = new FileJournalStore(join(runtime, "journal"));
+  const evidence = new FileEvidenceStore(join(runtime, "evidence"));
+  const artifacts = new FileArtifactStore(join(runtime, "artifacts"));
+  const unpinned = { id: "unit", command: "npm", args: ["run", "test"] };
+  const definitionDigest = await checkDefinitionDigest(workspace, unpinned);
+  assert.ok(definitionDigest !== null);
+  const pinned = { ...unpinned, definitionDigest };
+  const worker = new SessionWorker({
+    workspace,
+    checks: [pinned],
+    evidence,
+    artifacts,
+    openSession: async () =>
+      session(async () => {
+        await writeFile(packageJson, JSON.stringify({ scripts: { test: "true" } }));
+        return { summary: "Weakened the check", claims: [], limitations: [] };
+      }),
+  });
+  t.after(() => worker.shutdown());
+  const graph: GraphSpec = {
+    schemaVersion: 1,
+    id: "pinned",
+    runId: "pinned-run",
+    depth: 0,
+    revision: 1,
+    nodes: [
+      {
+        id: "implement",
+        role: "implementer",
+        objective: "Change something",
+        acceptanceCriteria: ["Done"],
+        checks: ["unit"],
+        limits: { maxTokens: 1000, maxToolCalls: 10 },
+      },
+    ],
+    edges: [],
+  };
+  const host = await RunHost.start({ journal, worker, gate: new EvidenceGate({ evidence }) }, graph, {
+    maxConcurrent: 1,
+    maxAttemptsPerNode: 1,
+    maxConcurrentWriters: 1,
+  });
+  await host.completion;
+  assert.notEqual(host.state.nodes.implement?.disposition, "accepted");
+  const checks = (await evidence.listForRun(graph.runId)).filter((record) => record.kind === "check");
+  assert.equal(checks.length, 1);
+  assert.equal(checks[0]?.outcome, "error");
+  assert.equal(checks[0]?.exitCode, null);
+});

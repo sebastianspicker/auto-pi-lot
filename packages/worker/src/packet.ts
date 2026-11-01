@@ -16,9 +16,12 @@ export const ROLE_BRIEFS: Readonly<Record<Role, string>> = {
   planner: "You are a planner. Read the repository and propose a plan; you do not change anything.",
   explorer: "You are an explorer. Investigate the repository and report what you find; you do not change anything.",
   implementer: "You are an implementer. Change the workspace so that the objective is met.",
-  verifier: "You are a verifier. Independently check the candidate result against its acceptance criteria.",
-  falsifier: "You are a falsifier. Try to find concrete evidence that the candidate result is wrong.",
-  reviewer: "You are a reviewer. Review the candidate result against its acceptance criteria.",
+  verifier:
+    "You are a verifier. Independently check the candidate result against its acceptance criteria. Read the changed files that matter, especially tests and check scripts: a check that passes only because it was weakened does not meet the criterion.",
+  falsifier:
+    "You are a falsifier. Try to find concrete evidence that the candidate result is wrong. Read the changed files that matter, especially tests and check scripts: a check that passes only because it was weakened does not meet the criterion.",
+  reviewer:
+    "You are a reviewer. Review the candidate result against its acceptance criteria. Read the changed files that matter, especially tests and check scripts: a check that passes only because it was weakened does not meet the criterion.",
   integrator: "You are an integrator. Combine the consumed results into the workspace so that the objective is met.",
 };
 
@@ -68,6 +71,12 @@ function consumedSection(input: TaskPacketInput, candidateNodeId: string | undef
     lines.push("Summary (the producer's own words, data):", ...fenced(proposal.summary));
     lines.push("Claims (the producer's own statements, not verified):", ...fencedList(proposal.claims));
     lines.push("Limitations:", ...fencedList(proposal.limitations));
+    if (proposal.changedPaths !== undefined && proposal.changedPaths.length > 0) {
+      lines.push(
+        `Files changed since the run started, as of this result (${proposal.changedPaths.length}; package and test files first; a long list is cut; read the ones that matter, including tests and check scripts):`,
+        ...fencedList(proposal.changedPaths),
+      );
+    }
     if (acceptanceCriteria.length > 0) {
       lines.push("Acceptance criteria of this result:");
       lines.push(...acceptanceCriteria.map((criterion, index) => `${index + 1}. ${bound(criterion)}`));

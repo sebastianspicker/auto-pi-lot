@@ -867,7 +867,7 @@ function guardEvent(state: RunState, event: JournalEvent): DecideResult | null {
   if (typeof event !== "object" || event === null) {
     return reject(state, "invalid_transition", `Malformed event: ${JSON.stringify(event)}`);
   }
-  if (ownValue(state.appliedEventIds, event.eventId) === true) {
+  if (state.appliedEventIds.includes(event.eventId)) {
     return reject(state, "duplicate_event", `Event already applied: ${event.eventId}`);
   }
   if (event.type === "run_started") return null; // handleRunStarted checks already_started itself
@@ -929,7 +929,7 @@ export function decide(state: RunState, event: JournalEvent): DecideResult {
 
   const applied: RunState = {
     ...outcome.state,
-    appliedEventIds: { ...outcome.state.appliedEventIds, [event.eventId]: true },
+    appliedEventIds: [...outcome.state.appliedEventIds, event.eventId],
   };
   const requested = requestDueAcceptances(settleUnacceptable(applied));
   const dispatched = runDispatchLoop(requested.state);

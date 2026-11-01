@@ -21,12 +21,12 @@ interface RegisteredCommand {
 /** Records only the members the extension touches; everything else stays unimplemented. */
 function createFakeApi() {
   const commands = new Map<string, RegisteredCommand>();
-  const listeners = new Map<string, () => void>();
+  const listeners = new Map<string, (event: { reason: string }) => void>();
   const api = {
     registerCommand: (name: string, command: RegisteredCommand) => {
       commands.set(name, command);
     },
-    on: (event: string, listener: () => void) => {
+    on: (event: string, listener: (event: { reason: string }) => void) => {
       listeners.set(event, listener);
     },
   } as unknown as ExtensionAPI;
@@ -318,6 +318,23 @@ test("inspect summarises status, node dispositions, sessions and verification", 
   ]);
 });
 
+test("inspect shows the execution state of a node that has no disposition yet", async () => {
+  const { graph, calls, notices, ctx } = setup();
+  const pending = graph.handler("inspect run-2", ctx);
+  await tick();
+  calls[0]?.child.exit(
+    0,
+    JSON.stringify({
+      mode: "inspect",
+      runId: "run-2",
+      status: "cancelled",
+      nodes: { impl: { disposition: null, execution: "running" }, review: { disposition: null, execution: "pending" } },
+    }),
+  );
+  await pending;
+  assert.equal(notices[0]?.message, "run run-2: cancelled\n  impl: running\n  review: pending");
+});
+
 test("inspect needs a run ID and reports an unknown run as an error", async () => {
   const { graph, calls, notices, ctx } = setup();
   await graph.handler("inspect", ctx);
@@ -357,7 +374,18 @@ test("session shutdown sends SIGINT to the active child and is harmless without 
 test("the registered session_shutdown listener is harmless when no run is active", () => {
   const { api, listeners } = createFakeApi();
   autoPiLot(api);
-  assert.doesNotThrow(() => listeners.get("session_shutdown")?.());
+  assert.doesNotThrow(() => listeners.get("session_shutdown")?.({ reason: "quit" }));
+});
+
+test("only quitting Pi cancels the run; replacing the session leaves it running", async () => {
+  for (const reason of ["new", "resume", "fork", "reload", "quit"]) {
+    const { api, listeners } = createFakeApi();
+    const { graph, calls, ctx } = setup();
+    autoPiLot(api, graph);
+    await graph.handler("run plan.json", ctx);
+    listeners.get("session_shutdown")?.({ reason });
+    assert.deepEqual(calls[0]?.child.signals, reason === "quit" ? ["SIGINT"] : [], `reason ${reason}`);
+  }
 });
 
 test("a run outlives a stale Pi context: progress and the final notice never throw from the child's events", async () => {

@@ -1,6 +1,7 @@
 import { join, resolve } from "node:path";
 
 import { encodeRunId } from "@auto-pi-lot/host";
+import { RUNTIME_STATE_DIR } from "@auto-pi-lot/worker";
 
 /** Where the CLI keeps runtime state and reads its configuration, relative to one workspace. */
 export interface RuntimePaths {
@@ -12,8 +13,8 @@ export interface RuntimePaths {
   readonly config: string;
 }
 
-/** The runtime directory inside a workspace; gitignored. */
-export const RUNTIME_DIR = ".auto-pi-lot";
+/** The runtime directory inside a workspace; gitignored. Defined once, by the worker that excludes it from fingerprints. */
+export const RUNTIME_DIR = RUNTIME_STATE_DIR;
 export const CONFIG_FILE = "auto-pi-lot.json";
 export const PLAN_FILE = "auto-pi-lot.plan.json";
 
