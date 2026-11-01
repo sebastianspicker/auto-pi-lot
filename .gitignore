@@ -27,3 +27,14 @@ site/trace.json.tmp
 .DS_Store
 .idea/
 .vscode/
+
+# Local-only agent coordination and remediation records.
+/.codex/
+/.private/
+/scratch/
+/CLAUDE.md
+/CODEX.md
+/GEMINI.md
+/ALPHA_*.md
+/*_LEDGER.md
+/*-LEDGER.md

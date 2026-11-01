@@ -40,10 +40,34 @@ export type ReviewReport = z.infer<typeof ReviewReportSchema>;
  * `WorkReportSchema` or `ReviewReportSchema`.
  */
 export function extractJsonBlock(text: string): unknown {
-  const pattern = /```json\s*\n([\s\S]*?)\n\s*```/g;
+  let cursor = 0;
   let last: string | null = null;
-  for (let match = pattern.exec(text); match !== null; match = pattern.exec(text)) {
-    last = match[1] ?? null;
+  while (cursor < text.length) {
+    const marker = text.indexOf("```json", cursor);
+    if (marker === -1) break;
+    let start = marker + 7;
+    let newline = -1;
+    let previousNewline = -1;
+    while (start < text.length && reportWhitespace(text[start])) {
+      if (text[start] === "\n") {
+        previousNewline = newline;
+        newline = start;
+      }
+      start++;
+    }
+    if (newline === -1) {
+      cursor = start;
+      continue;
+    }
+    const bodyStart = newline + 1;
+    const closing = closingJsonFence(text, bodyStart);
+    if (closing === undefined) {
+      // The old greedy opener can fall back to an earlier blank line for an empty block.
+      if (previousNewline !== -1 && text.startsWith("```", start)) return null;
+      break;
+    }
+    last = text.slice(bodyStart, closing.bodyEnd);
+    cursor = closing.fenceEnd;
   }
   if (last === null) return null;
   try {
@@ -51,4 +75,24 @@ export function extractJsonBlock(text: string): unknown {
   } catch {
     return null;
   }
+}
+
+/** Each fence and its immediately preceding whitespace is visited at most once. */
+function closingJsonFence(text: string, bodyStart: number): { bodyEnd: number; fenceEnd: number } | undefined {
+  let fence = text.indexOf("```", bodyStart);
+  while (fence !== -1) {
+    let whitespaceStart = fence;
+    let newline = -1;
+    while (whitespaceStart > bodyStart && reportWhitespace(text[whitespaceStart - 1])) {
+      whitespaceStart--;
+      if (text[whitespaceStart] === "\n") newline = whitespaceStart;
+    }
+    if (newline !== -1) return { bodyEnd: newline, fenceEnd: fence + 3 };
+    fence = text.indexOf("```", fence + 3);
+  }
+  return undefined;
+}
+
+function reportWhitespace(character: string | undefined): boolean {
+  return character !== undefined && character.trim() === "";
 }

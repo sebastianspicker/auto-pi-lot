@@ -6,6 +6,23 @@ Run a coding plan through [Pi](https://www.npmjs.com/package/@earendil-works/pi-
 check the resulting code with your repository's commands, and keep an inspectable record of
 what passed, failed, or needed repair.
 
+<details>
+<summary>Status and limitations</summary>
+
+auto-pi-lot is an independent experimental project for running and checking
+coding plans through Pi. Developed independently alongside my main
+professional work. It is a starting point to inspect and adapt, rather than
+a ready-to-use supported product. A complete real-provider run remains an
+alpha release condition; real runs edit your checkout and use your model
+credentials.
+
+**Disclaimer.** The harness is not a process sandbox and does not guarantee
+the security or correctness of generated changes. Use trusted repositories,
+preserve work you can restore, review the recorded evidence, and take
+responsibility for executed commands, resulting changes and model costs.
+
+</details>
+
 **Agents propose work; the harness accepts it from recorded evidence.** Each task gets its own
 session, acceptance criteria, tool and token limits, deadline, and bounded retries. Checks run
 as actual processes. Optional reviewer tasks judge the producer's criteria. Failed checks and
@@ -15,6 +32,17 @@ This is an **experimental local tool for trusted repositories**. It edits your c
 place and uses your model credentials. It does not commit, push, or deploy your work. Worktrees,
 a process sandbox, run-wide spending caps, nested plans, and a background supervisor are not
 implemented. No claim is made that this outperforms a single coding session.
+
+The plan supplies the goals and limits; a model report is a proposal, and the
+harness uses recorded checks and review evidence to decide the task outcome.
+
+```mermaid
+flowchart LR
+    A[Plan and acceptance criteria] --> B[Pi coding session]
+    B --> C[Repository checks and optional review]
+    C --> D[Recorded evidence]
+    D --> E[Accept, retry within limits, or stop]
+```
 
 ## Get started
 
@@ -211,11 +239,13 @@ npm test
 npm run sim
 ```
 
-Tests and ADRs are versioned. CI is configured to run build, formatting, import boundaries,
+Tests and ADRs are versioned. General CI runs automatically for Dependabot-authored PRs
+and can be dispatched manually. It runs build, formatting, import boundaries,
 links, test type checking, unit/integration tests, and a 2000-seed scheduler simulation on
 Linux and macOS with Node 22.19 and 26.9. The integration suite uses scripted model sessions
 with real workspaces, subprocess checks, durable storage, the host, and the evidence gate.
-Live model sessions remain a separate, explicitly authorized qualification step. POSIX process
+The Pages trace viewer requires a manual workflow run on `main`. Live model sessions
+remain a separate, explicitly authorized qualification step. POSIX process
 group cleanup is implemented; Windows descendant cleanup is not qualified.
 
 See [contributing](CONTRIBUTING.md), [architecture](docs/architecture.md),

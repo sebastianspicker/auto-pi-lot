@@ -205,10 +205,11 @@ numbers are kept separate: a *graph revision* is the history of a plan's content
 Markdown link checker. `npm test`, `npm run test:types` and `npm run sim` run the versioned
 unit/integration tests, their type check and the seeded reducer simulation. The `scripts/` folder holds the link checker and the *exact-source
 fingerprint* used to tie evidence to a precise version of the code. On GitHub, the
-`checks` workflow runs `npm ci --ignore-scripts`, `npm run check`, `npm run test:types`,
+`checks` workflow runs automatically only for Dependabot-authored PRs, or by manual
+dispatch. It runs `npm ci --ignore-scripts`, `npm run check`, `npm run test:types`,
 `npm test`, `npm run sim`, and `npm run demo` on Linux/macOS and Node 22.19/26.9. The `pages` workflow regenerates `site/trace.json` from the
-same commit and publishes `site/` to GitHub Pages, so the viewer always shows the current
-reducer's behaviour. [Architecture: Repository tooling]
+selected `main` commit during a manual run and publishes `site/` to GitHub Pages. It
+shows the reducer behavior from that deployed commit, not necessarily the latest local tree. [Architecture: Repository tooling]
 
 ## Final verification and recorded execution
 

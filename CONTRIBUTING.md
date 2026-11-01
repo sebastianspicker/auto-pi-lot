@@ -17,7 +17,8 @@ npm run check
 `npm run check` builds every package and runs Biome (formatting, lint and import boundaries)
 plus the Markdown link check. Tests, their fixtures and configuration, the simulation, and
 ADRs are versioned. Before opening a pull request, also run `npm run test:types`, `npm test`,
-and `npm run sim`. CI runs all four checks on Linux and macOS with Node 22.19 and 26.9.
+and `npm run sim`. CI runs all four checks on Linux and macOS with Node 22.19 and 26.9. General CI
+runs automatically only for Dependabot-authored PRs and remains manually dispatchable.
 The implementation ledger remains local and is not a CI gate.
 
 Other useful commands:
