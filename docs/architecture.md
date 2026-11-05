@@ -104,18 +104,28 @@ ports the host is given. [Architecture: What runs today]
 | [`@auto-pi-lot/host`](../packages/host/README.md) | The host loop (`RunHost`), the journal, evidence and artifact stores, the evidence gate, and the scripted fake worker and gate | `@auto-pi-lot/core` and Node's file system |
 | [`@auto-pi-lot/worker`](../packages/worker/README.md) | The session worker, the check runner, the workspace fingerprint and the task packet | `@auto-pi-lot/core` and Node's file system and child processes |
 | [`@auto-pi-lot/pi`](../packages/pi/README.md) | Everything tied to the Pi SDK: the session adapter, the session opener and the Pi extension entry point | Only the session part of core (`@auto-pi-lot/core/session`), and the Pi SDK |
-| [`@auto-pi-lot/cli`](../packages/cli/README.md) | The operator's entry point (`init`, `validate`, `run`, `inspect`, `status`, `artifact`, `demo`, `trace`) and the place where the parts are wired together | `@auto-pi-lot/core`, `@auto-pi-lot/host`, `@auto-pi-lot/worker`, `@auto-pi-lot/pi` |
+| [`@auto-pi-lot/cli`](../packages/cli/README.md) | The operator's entry point (`init`, `validate`, `check`, `run`, `inspect`, `status`, `artifact`, `demo`, `trace`) and the place where the parts are wired together | `@auto-pi-lot/core`, `@auto-pi-lot/host`, `@auto-pi-lot/worker`, `@auto-pi-lot/pi` |
 
-```text
-          @auto-pi-lot/core ──────────────────────────┐
-          │  (index: full domain, incl. ports)        │ ./session subpath (session port only)
-          ├──────────────────┐                        ▼
-          ▼                  ▼                 @auto-pi-lot/pi ──► @earendil-works/pi-coding-agent
-   @auto-pi-lot/host   @auto-pi-lot/worker            │
-          │                  │                        │
-          └──────────────────┴────────────────────────┘
-                             ▼
-                      @auto-pi-lot/cli
+Which package may import which (arrows point from the importer to what it imports):
+
+```mermaid
+flowchart BT
+  core["@auto-pi-lot/core"]
+  host["@auto-pi-lot/host"]
+  worker["@auto-pi-lot/worker"]
+  pi["@auto-pi-lot/pi"]
+  cli["@auto-pi-lot/cli"]
+  sdk["Pi SDK<br/>pi-coding-agent"]
+  host -->|full domain and ports| core
+  worker -->|full domain and ports| core
+  pi -->|"./session subpath only"| core
+  pi --> sdk
+  cli --> host
+  cli --> worker
+  cli --> pi
+  cli --> core
+  classDef focus fill:#fde68a,stroke:#b45309,color:#1f2937
+  class core focus
 ```
 
 All dependencies point toward `core`, and `core` depends on no other package in the
@@ -138,6 +148,213 @@ violation fails the build rather than depending on review. [Architecture: Enforc
 | `pi` uses `@auto-pi-lot/core/session`, never the whole of `@auto-pi-lot/core`. | Biome `noRestrictedImports`, set for `packages/pi` |
 | No circular imports, including type-only ones and ones across packages. | Biome `noImportCycles` (`ignoreTypes: false`) |
 | No file may reach directly into another package's `src` or `dist` folder. TypeScript's project references would otherwise quietly allow this. | Biome `noRestrictedImports`, set for `packages/*/src` and repeated in the `core` and `pi` settings, because a package-specific setting replaces the general one |
+
+## How a run works
+
+This section follows one `auto-pi-lot run --worker pi` from the command line to the final
+report. The fake worker (`npm run fake-run`) takes the same path through `RunHost` and the
+reducer, but swaps `SessionWorker` and `EvidenceGate` for `ScriptedWorker` and `ScriptedGate`
+and skips final verification.
+
+### What runs where
+
+Everything except the model and the check commands runs in **one Node process**, the CLI:
+
+```mermaid
+flowchart LR
+  op((Operator))
+  ext["/graph extension<br/>(inside Pi)"]
+  subgraph proc [CLI process]
+    cli["runRun<br/>(cli/run.ts)"]
+    host[RunHost]
+    decide["decide()<br/>(core reducer)"]
+    worker[SessionWorker]
+    gate[EvidenceGate]
+    verifier[WorkspaceVerifier]
+  end
+  checks[["Check processes<br/>(npm test, …)"]]
+  model[(Model provider)]
+  disk[(".auto-pi-lot/<br/>journal, evidence")]
+  op -->|"auto-pi-lot run"| cli
+  ext -.->|spawns CLI| cli
+  cli -->|start / resume| host
+  host -->|"event → state, commands"| decide
+  host -->|append event| disk
+  host -->|"start attempt"| worker
+  worker -->|"Pi session (SDK)"| model
+  worker -->|"spawn, no shell"| checks
+  worker -->|receipts, proposal| disk
+  host -->|evaluate| gate
+  gate -->|read evidence| disk
+  host -->|verify run| verifier
+  verifier -->|"spawn final checks"| checks
+  classDef focus fill:#fde68a,stroke:#b45309,color:#1f2937
+  class host focus
+```
+
+`runRun` is the composition root: it builds the stores, the Pi session opener, the worker,
+the gate and the verifier and hands them to `RunHost` as `HostPorts`. `RunHost` is the only
+thing that talks to the reducer and the journal. The worker opens the Pi session in-process
+through `createPiSessionOpener` (`packages/pi`); the model's own `bash` tool calls and the
+check commands are the only child processes. The `/graph` extension never imports the CLI; it
+starts it as a child process and reads its output. Before the first attempt, the CLI also runs
+`git` to record a restore point (see [Runtime state](#runtime-state-on-disk)).
+
+Where in the code:
+[packages/cli/src/run.ts](../packages/cli/src/run.ts) (`runRun`),
+[packages/host/src/host.ts](../packages/host/src/host.ts) (`RunHost`),
+[packages/core/src/run/decide.ts](../packages/core/src/run/decide.ts) (`decide`),
+[packages/worker/src/session-worker.ts](../packages/worker/src/session-worker.ts),
+[packages/host/src/gate.ts](../packages/host/src/gate.ts),
+[packages/worker/src/run-verifier.ts](../packages/worker/src/run-verifier.ts),
+[packages/pi/src/opener.ts](../packages/pi/src/opener.ts),
+[packages/pi/src/extension.ts](../packages/pi/src/extension.ts).
+
+### What happens when you run a plan
+
+One task, accepted on its first attempt, then final verification. Every arrow into `Journal`
+is an event that `RunHost` first ran through `decide`; the reducer's commands are what make
+the host take the next step.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant cli as CLI (runRun)
+  participant host as RunHost
+  participant journal as Journal
+  participant worker as SessionWorker
+  participant pi as Pi session
+  participant gate as EvidenceGate
+  participant verifier as WorkspaceVerifier
+  cli->>cli: restore point, locks, pin checks
+  cli->>host: RunHost.start(ports, graph, policy)
+  host->>journal: run_started
+  Note over host: decide → dispatch
+  host->>journal: attempt_dispatched
+  host-)worker: start(assignment)
+  worker->>pi: open session, prompt task packet
+  pi-->>worker: tool calls, usage, final report
+  worker->>worker: fingerprint tree, run checks, store proposal
+  worker--)host: result (proposal digest)
+  host->>journal: result_proposed
+  Note over host: decide → evaluate_acceptance
+  host->>gate: evaluate(request)
+  gate-->>host: accepted + receipt IDs
+  host->>journal: acceptance_decided
+  Note over host: all accepted → verify_run
+  host->>verifier: verify(runId)
+  verifier-->>host: passed + final receipts
+  host->>journal: run_verified
+  host-->>cli: completion: succeeded
+  cli->>cli: replay journal, print JSON report
+```
+
+- **Steps 1–2.** Before any session opens, the CLI takes the workspace and journal locks,
+  records a git restore point and pins the check definitions into the execution manifest
+  (decision 0016). `RunHost.start` validates the graph again.
+- **Steps 3–5.** The host persists before acting (decision 0008): the worker starts only after
+  `attempt_dispatched` is in the journal, so a crash at any point leaves an event log that
+  `RunHost.resume` can replay and reconcile.
+- **Steps 6–9.** The worker builds the task packet, opens a closed Pi session with the tools
+  for the node's role, counts tool calls and tokens against the node's limits, and parses the
+  final JSON report (one repair prompt if it is malformed). It then fingerprints the
+  workspace, runs the node's checks as processes and writes check receipts and a
+  `ResultProposal` to the evidence store. A reviewer node writes a review receipt instead of
+  running checks.
+- **Steps 11–13.** The model's report is only a proposal. `EvidenceGate` reads the evidence
+  store and accepts only receipts reachable from the journaled proposal digest, then writes
+  an `AcceptanceRecord` (decision 0010). A rejection makes the reducer dispatch a new attempt
+  that names the receipts it must repair, up to `maxAttemptsPerNode`.
+- **Steps 14–18.** With every task accepted, the reducer moves the run to `verifying`.
+  `WorkspaceVerifier` reruns the declared checks on the combined tree; `run_verified` decides
+  the final status (decision 0014). The JSON report goes to stdout; progress lines go to stderr.
+
+Where in the code:
+[packages/cli/src/restore.ts](../packages/cli/src/restore.ts) (`createRestorePoint`),
+[packages/cli/src/lock.ts](../packages/cli/src/lock.ts),
+[packages/worker/src/packet.ts](../packages/worker/src/packet.ts) (`buildTaskPacket`),
+[packages/worker/src/tools.ts](../packages/worker/src/tools.ts) (tools per role),
+[packages/worker/src/check-runner.ts](../packages/worker/src/check-runner.ts) (`runCheck`),
+[packages/worker/src/workspace.ts](../packages/worker/src/workspace.ts) (fingerprint),
+[packages/core/src/run/events.ts](../packages/core/src/run/events.ts) (event types),
+[packages/core/src/run/commands.ts](../packages/core/src/run/commands.ts) (command types).
+
+### Run states
+
+The states a run goes through, as the reducer sets them in `RunState.status`:
+
+```mermaid
+stateDiagram-v2
+  [*] --> not_started
+  not_started --> running: run_started
+  running --> verifying: all tasks accepted (Pi)
+  running --> succeeded: all tasks accepted (fake)
+  running --> failed: no progress possible
+  running --> cancelling: cancel_requested
+  verifying --> succeeded: run_verified, passed
+  verifying --> failed: run_verified, failed
+  verifying --> cancelling: cancel_requested
+  cancelling --> cancelled: attempts stopped
+  succeeded --> [*]
+  failed --> [*]
+  cancelled --> [*]
+```
+
+"No progress possible" covers a task that ran out of attempts and everything that depends on
+it (decision 0006). Pi runs always set `requireFinalVerification`, so they pass through
+`verifying`; fake runs go straight to `succeeded`. Cancellation waits until no attempt holds a
+permit and no verification is outstanding. Individual attempts have their own statuses
+(`dispatched`, `result_ready`, `accepted`, `rejected`, `superseded`, …), documented on
+`AttemptStatus`.
+
+Where in the code: [packages/core/src/run/state.ts](../packages/core/src/run/state.ts)
+(`RunStatus`, `AttemptStatus`), `checkCompletion` and `handleRunVerified` in
+[packages/core/src/run/decide.ts](../packages/core/src/run/decide.ts).
+
+### Runtime state on disk
+
+All state a run leaves behind, relative to the workspace. Nothing here is committed to Git.
+
+| Location | Holds | Written by |
+| --- | --- | --- |
+| `auto-pi-lot.json`, `auto-pi-lot.plan.json` | Check profiles, policy, model; the plan | `init`, then you |
+| `.auto-pi-lot/journal/run-<runId>.jsonl` | The append-only event log, the source of truth for a run | `FileJournalStore` |
+| `.auto-pi-lot/evidence/run-<runId>/<kind>-<hex>.json` | Proposals, check and review receipts, acceptance records, content-addressed | `FileEvidenceStore` |
+| `.auto-pi-lot/artifacts/<hex>` | Check logs, content-addressed | `FileArtifactStore` |
+| `.auto-pi-lot/sessions/run-<runId>/*.jsonl` | Pi session transcripts, one per attempt | Pi, via the session opener |
+| `.auto-pi-lot/run.lock`, `<journal>/.writer.lock` | Workspace and journal ownership (PID, host, start time) | CLI lock |
+| `refs/auto-pi-lot/restore/<runId>` (git ref) | A commit of the tree before the first attempt | `createRestorePoint` |
+
+Run IDs are encoded into file names by `encodeRunId`. The whole `.auto-pi-lot/` directory is
+excluded from the workspace fingerprint, so writing state never looks like a source change.
+
+Where in the code:
+[packages/cli/src/paths.ts](../packages/cli/src/paths.ts) (`runtimePaths`, the one place this
+layout is spelled out),
+[packages/host/src/journal/file.ts](../packages/host/src/journal/file.ts),
+[packages/host/src/evidence/file.ts](../packages/host/src/evidence/file.ts),
+[packages/host/src/paths.ts](../packages/host/src/paths.ts) (`encodeRunId`).
+
+## Code map
+
+In the order a newcomer would read it:
+
+| Path | Responsibility |
+| --- | --- |
+| [packages/cli/src/index.ts](../packages/cli/src/index.ts) | Command dispatch: `init`, `validate`, `check`, `run`, `inspect`, … |
+| [packages/cli/src/run.ts](../packages/cli/src/run.ts) | `runRun`: loads config and plan, wires the ports, starts or resumes the host, prints the report |
+| [packages/core/src/graph/](../packages/core/src/graph) | Plan schema (`spec.ts`), checking (`validate.ts`) and warnings (`lint.ts`) |
+| [packages/core/src/run/decide.ts](../packages/core/src/run/decide.ts) | The reducer: every scheduling, retry, acceptance and cancellation decision |
+| [packages/core/src/run/ports.ts](../packages/core/src/run/ports.ts) | The interfaces the host is given: journal, worker, gate, evidence, artifacts, verifier |
+| [packages/host/src/host.ts](../packages/host/src/host.ts) | `RunHost`: decide, persist, then act; resume and reconcile |
+| [packages/host/src/gate.ts](../packages/host/src/gate.ts) | `EvidenceGate`: accept or reject from recorded evidence |
+| [packages/worker/src/session-worker.ts](../packages/worker/src/session-worker.ts) | `SessionWorker`: one attempt through a coding session, then checks and proposal |
+| [packages/worker/src/check-runner.ts](../packages/worker/src/check-runner.ts) | Runs one check profile as a process: no shell, env allowlist, timeout, logs |
+| [packages/core/src/session.ts](../packages/core/src/session.ts) | `CodingSession`, the provider-neutral session interface |
+| [packages/pi/src/opener.ts](../packages/pi/src/opener.ts) | Opens a closed Pi SDK session per attempt; `map-event.ts` translates its events |
+| [packages/pi/src/extension.ts](../packages/pi/src/extension.ts) | The `/graph` commands inside Pi |
+| [packages/host/src/fakes.ts](../packages/host/src/fakes.ts) | `ScriptedWorker` and `ScriptedGate` for runs without a model |
+| [packages/cli/src/trace.ts](../packages/cli/src/trace.ts), [site/](../site) | Scripted scenarios and the trace viewer they feed |
 
 ## How the host uses the reducer
 

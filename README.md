@@ -6,6 +6,8 @@ Run a coding plan through [Pi](https://www.npmjs.com/package/@earendil-works/pi-
 check the resulting code with your repository's commands, and keep an inspectable record of
 what passed, failed, or needed repair.
 
+> _Claude was used to polish and proof-read the code and documentation of this repository._
+
 <details>
 <summary>Status and limitations</summary>
 
@@ -43,6 +45,9 @@ flowchart LR
     C --> D[Recorded evidence]
     D --> E[Accept, retry within limits, or stop]
 ```
+
+[How a run works](docs/architecture.md#how-a-run-works) shows what runs where, the call path of
+one run, the run states and what is stored on disk.
 
 ## Get started
 
