@@ -1,0 +1,11 @@
+---
+# Codacy Cloud: keep analysis on production source. Tests, fixtures, review
+# reproductions and generated files are excluded.
+exclude_paths:
+  - "packages/*/test/**"
+  - "scripts/test/**"
+  - "scripts/check-*.ts"
+  - "docs/reviews/**"
+  - "package-lock.json"
+  - "**/package-lock.json"
+  - "site/trace.json"
