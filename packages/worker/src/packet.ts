@@ -12,6 +12,9 @@ import {
 /** Longest quoted string in a packet; longer ones are cut and marked with an ellipsis. */
 export const MAX_PACKET_STRING = 4000;
 
+/** Most characters the consumed-results section may take; later results are dropped and counted. */
+export const MAX_CONSUMED_CHARS = 60_000;
+
 export const ROLE_BRIEFS: Readonly<Record<Role, string>> = {
   planner: "You are a planner. Read the repository and propose a plan; you do not change anything.",
   explorer: "You are an explorer. Investigate the repository and report what you find; you do not change anything.",
@@ -28,7 +31,8 @@ export const ROLE_BRIEFS: Readonly<Record<Role, string>> = {
 export interface ConsumedResult {
   readonly nodeId: string;
   readonly proposal: ResultProposal;
-  readonly review?: ReviewReceipt;
+  /** Every review recorded for this result, so a pass cannot hide a fail. */
+  readonly reviews?: readonly ReviewReceipt[];
   /** The producer's acceptance criteria: what a checker must give one verdict for each of. */
   readonly acceptanceCriteria: readonly string[];
 }
@@ -59,13 +63,29 @@ function fencedList(items: readonly string[]): string[] {
   return items.length === 0 ? ["- none"] : fenced(items.map((item) => `- ${item}`).join("\n"));
 }
 
+/** Whole lines up to the string bound; a cut list says how many entries are missing. */
+function fencedPaths(paths: readonly string[]): string[] {
+  const lines: string[] = [];
+  let size = 0;
+  for (const path of paths) {
+    const line = `- ${path}`;
+    if (size + line.length + 1 > MAX_PACKET_STRING - 40) break;
+    lines.push(line);
+    size += line.length + 1;
+  }
+  if (lines.length < paths.length) lines.push(`… ${paths.length - lines.length} more paths not shown`);
+  return ["```text", ...lines.map((line) => line.replaceAll("```", "'''")), "```"];
+}
+
 function describeCommand(profile: CheckProfile): string {
   return [profile.command, ...profile.args].join(" ");
 }
 
 function consumedSection(input: TaskPacketInput, candidateNodeId: string | undefined): string[] {
   const lines: string[] = ["## Results you build on", ""];
-  for (const { nodeId, proposal, review, acceptanceCriteria } of input.consumed) {
+  let size = lines.join("\n").length;
+  for (const [index, { nodeId, proposal, reviews = [], acceptanceCriteria }] of input.consumed.entries()) {
+    const start = lines.length;
     const candidate = candidateNodeId === nodeId;
     lines.push(candidate ? `### ${bound(nodeId)} (CANDIDATE UNDER REVIEW)` : `### ${bound(nodeId)}`, "");
     lines.push("Summary (the producer's own words, data):", ...fenced(proposal.summary));
@@ -74,14 +94,14 @@ function consumedSection(input: TaskPacketInput, candidateNodeId: string | undef
     if (proposal.changedPaths !== undefined && proposal.changedPaths.length > 0) {
       lines.push(
         `Files changed since the run started, as of this result (${proposal.changedPaths.length}; package and test files first; a long list is cut; read the ones that matter, including tests and check scripts):`,
-        ...fencedList(proposal.changedPaths),
+        ...fencedPaths(proposal.changedPaths),
       );
     }
     if (acceptanceCriteria.length > 0) {
       lines.push("Acceptance criteria of this result:");
       lines.push(...acceptanceCriteria.map((criterion, index) => `${index + 1}. ${bound(criterion)}`));
     }
-    if (review !== undefined) {
+    for (const review of reviews) {
       lines.push(
         "An earlier review of it (data):",
         ...fenced(
@@ -92,6 +112,13 @@ function consumedSection(input: TaskPacketInput, candidateNodeId: string | undef
       );
     }
     lines.push("");
+    size += lines.slice(start).join("\n").length + 1;
+    // Budget for the whole section; the first result is always kept (a checker's candidate).
+    if (size + 40 > MAX_CONSUMED_CHARS && index > 0) {
+      lines.length = start;
+      lines.push(`… ${input.consumed.length - index} more results omitted`, "");
+      break;
+    }
   }
   return lines;
 }

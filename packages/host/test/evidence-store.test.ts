@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, truncate, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -221,5 +221,16 @@ test("FileArtifactStore detects corruption on read", async () => {
     const id = await store.put(new TextEncoder().encode("original"));
     await writeFile(join(directory, id.slice("sha256:".length)), "altered");
     await assert.rejects(store.get(id), EvidenceCorruptError);
+  });
+});
+
+test("FileArtifactStore.put tests existence without reading the existing file", async () => {
+  await withTempDir(async (directory) => {
+    const store = new FileArtifactStore(directory);
+    const bytes = new TextEncoder().encode("present");
+    const id = await store.put(bytes);
+    // A sparse file over the read limit: put must not load it just to see that it exists.
+    await truncate(join(directory, id.slice("sha256:".length)), MAX_ARTIFACT_BYTES + 1);
+    assert.equal(await store.put(bytes), id);
   });
 });

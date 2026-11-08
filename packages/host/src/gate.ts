@@ -5,6 +5,7 @@ import {
   type AcceptanceVerdict,
   type CheckReceipt,
   criteriaMissing,
+  digest,
   type EvidenceStore,
   identifyEvidence,
   isCheckerRole,
@@ -111,9 +112,12 @@ export class EvidenceGate implements AcceptanceGate {
       reasons.push(`receipts truncated to the first ${MAX_RECEIPTS} by id`);
     }
     const receiptIds = [...checkIds, ...reviewIds].sort();
-    const clipped = reasons.slice(0, MAX_REASONS).map((reason) => reason.slice(0, MAX_REASON_CHARS));
+    const clipped = reasons
+      .slice(0, MAX_REASONS)
+      .map((reason) => reason.slice(0, MAX_REASON_CHARS).trim())
+      .filter((reason) => reason.length > 0);
 
-    const record = identifyEvidence<AcceptanceRecord>({
+    const content = {
       kind: "acceptance",
       schemaVersion: 1,
       runId: request.runId,
@@ -127,10 +131,20 @@ export class EvidenceGate implements AcceptanceGate {
       checkReceiptIds: checkIds,
       reviewReceiptIds: reviewIds,
       policyRevision: 1,
-      decidedAt: this.#clock().toISOString(),
       ...(clipped.length > 0 ? { reasons: clipped } : {}),
-    });
-    await this.#evidence.put(record);
+    } as const;
+    // `decidedAt` is part of the id: after a crash between put and the journaled decision, reuse the
+    // record of an identical decision instead of storing a second one.
+    const withoutTime = (r: object) => {
+      const { id: _id, decidedAt: _at, ...rest } = r as AcceptanceRecord;
+      return digest(rest);
+    };
+    const wanted = withoutTime(content);
+    if (!records.some((r) => r.kind === "acceptance" && withoutTime(r) === wanted)) {
+      await this.#evidence.put(
+        identifyEvidence<AcceptanceRecord>({ ...content, decidedAt: this.#clock().toISOString() }),
+      );
+    }
     if (outcome.decision === "rejected") {
       for (const reason of clipped) this.#log?.(`node ${request.nodeId} rejected: ${reason}`);
     }
@@ -146,7 +160,8 @@ export class EvidenceGate implements AcceptanceGate {
     const valid = reviews
       .filter((review) => review.reviewerAttemptId === request.attemptId && candidates.has(review.candidateAttemptId))
       .sort(byId);
-    if (valid.length === 0) {
+    // Every candidate needs its own review: one review does not vouch for the others.
+    if (new Set(valid.map((review) => review.candidateAttemptId)).size < candidates.size) {
       return {
         decision: "rejected",
         checkIds: [],

@@ -36,11 +36,11 @@ their first implementations lies. The first host had to settle both.
      reached the journal, so the host drives that dispatch again;
    - a node whose acceptance was requested but never decided is asked again; the reducer
      rejects a second decision for the same attempt, so this cannot double-accept.
-5. **Torn tail.** A journal whose last line is cut short or is not readable as UTF-8 JSON is
-   read up to the last complete record, and that fragment is treated as never written. This is
-   safe precisely because of rule 2: no command of that event can have run. A record that is
-   readable but fails its sequence, schema, run-id or digest check is corruption wherever it
-   sits, including at the end: an acknowledged record is never deleted.
+5. **Torn tail.** A journal whose last line is cut short (no trailing newline) is read up to
+   the last complete record, and that fragment is treated as never written. This is safe
+   precisely because of rule 2: no command of that event can have run. A newline-terminated
+   record that is unreadable, or readable but fails its sequence, schema, run-id or digest
+   check, is corruption wherever it sits, including at the end: an acknowledged record is never deleted.
 6. **The file journal is interim.** It is one append-only JSON Lines file per run with a
    sequence number and digest per record, flushed to disk on every append, with a bounded record
    size. It satisfies "survives a restart" for the fake-worker slice; the storage decision of

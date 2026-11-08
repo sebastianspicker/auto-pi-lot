@@ -121,11 +121,13 @@ async function reallyInside(workspace: string, candidate: string): Promise<boole
   } catch {
     return true;
   }
-  return insideWorkspace(realWorkspace, realCandidate);
+  return isInsideRoot(realWorkspace, realCandidate, true);
 }
 
-function insideWorkspace(workspace: string, candidate: string): boolean {
-  const relative = path.relative(workspace, candidate);
+/** Lexical containment of `candidate` under `root`; `allowRoot` says whether `root` itself counts as inside. */
+export function isInsideRoot(root: string, candidate: string, allowRoot: boolean): boolean {
+  const relative = path.relative(root, candidate);
+  if (relative === "") return allowRoot;
   return relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
 }
 
@@ -224,7 +226,7 @@ async function npmInputs(
     }
     const rc = await readOptional(path.join(dir, ".npmrc"));
     if (rc !== null) npmrc.push([path.relative(root, dir), rc]);
-    if (dir === root || !insideWorkspace(root, dir) || path.dirname(dir) === dir) break;
+    if (dir === root || !isInsideRoot(root, dir, true) || path.dirname(dir) === dir) break;
   }
   return { packageDir, packageJson, npmrc };
 }
@@ -281,7 +283,7 @@ export async function runCheck(profile: PinnedCheckProfile, input: RunCheckInput
 
   let finished: Finished;
   // Lexically inside, and really inside once symbolic links are resolved; a missing cwd is an error.
-  const confined = insideWorkspace(workspace, cwd) && (await reallyInside(workspace, cwd));
+  const confined = isInsideRoot(workspace, cwd, true) && (await reallyInside(workspace, cwd));
   const changed =
     confined && profile.definitionDigest !== undefined ? await definitionChanged(profile, workspace) : null;
   if (!confined) {

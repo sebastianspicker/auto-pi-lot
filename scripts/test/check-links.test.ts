@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
+import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { checkMarkdownLinks, findLinkTargets, isCheckableLink, stripAnchor } from "../check-links.js";
+import {
+  checkMarkdownLinks,
+  findLinkTargets,
+  findMarkdownFiles,
+  isCheckableLink,
+  stripAnchor,
+} from "../check-links.js";
 
 test("findLinkTargets extracts every markdown link target", () => {
   const markdown = "See [a](./a.md) and [b](../b.md#section), plus [c](https://example.com).";
@@ -120,4 +128,28 @@ test("a root-absolute link resolves against the repository root", () => {
   });
   assert.deepEqual(errors, []);
   assert.deepEqual(checked, ["README.md", join("docs", "a.md")]);
+});
+
+test("a link target may contain one level of balanced parentheses", () => {
+  assert.deepEqual(findLinkTargets("[x](docs/foo_(1).md) and [y](a.md)"), ["docs/foo_(1).md", "a.md"]);
+  assert.deepEqual(
+    checkMarkdownLinks("README.md", "[x](docs/foo_(1).md)", (path) => path === join("docs", "foo_(1).md")),
+    [],
+  );
+});
+
+test("a ?query on a link target is ignored", () => {
+  assert.deepEqual(
+    checkMarkdownLinks("README.md", "[x](README.md?plain=1#top)", (path) => path === "README.md"),
+    [],
+  );
+});
+
+test("findMarkdownFiles skips symlinks and .auto-pi-lot instead of crashing", async () => {
+  const root = await mkdtemp(join(tmpdir(), "auto-pi-lot-links-"));
+  await writeFile(join(root, "a.md"), "# a\n");
+  await mkdir(join(root, ".auto-pi-lot"));
+  await writeFile(join(root, ".auto-pi-lot", "state.md"), "# state\n");
+  await symlink(join(root, "missing.md"), join(root, "dangling.md"));
+  assert.deepEqual(findMarkdownFiles(root), [join(root, "a.md")]);
 });

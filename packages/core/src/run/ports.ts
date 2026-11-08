@@ -79,6 +79,8 @@ export interface WorkerAssignment {
   readonly node: NodeSpec;
   /** Producer node ID -> the producer attempt this attempt consumes (decision 0005). */
   readonly consumes: Readonly<Record<string, string>>;
+  /** Consumed attempt ID -> the digest of its journaled proposal; the worker reads only that record. */
+  readonly proposalsByAttempt: Readonly<Record<string, string>>;
   /** The producers this node verifies: those reached through a `result_ready` edge, in edge order. */
   readonly verifies: readonly string[];
   /** The specs of every producer in `consumes`, so a checker knows the criteria it must judge. */

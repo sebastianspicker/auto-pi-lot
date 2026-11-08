@@ -71,12 +71,11 @@ which lets a test stop a run mid-attempt and simulate a crash. The memory store 
   mode `0600` in a `0700` directory and are never opened through a symbolic link. Appends for one
   run are serialized within a store instance. The host never modifies a record it wrote; the only
   bytes it ever removes are an unreadable final fragment (next rule).
-- Torn-tail rule: a last line that is cut short (no trailing newline) or that is not readable
-  as UTF-8 JSON is a torn write: `read` returns the complete records before it with
+- Torn-tail rule: a last line that is cut short (no trailing newline) is a torn write: `read` returns the complete records before it with
   `tornTail: true`, and the next append truncates the fragment first. This is safe because the
   host acts on an event only after its append resolved, so no command of a torn record can have
-  run. A line that is readable JSON but fails the key, sequence, schema, run-id or digest check,
-  wherever it is, throws `JournalCorruptError` with the run, file and line number: a durable,
+  run. A newline-terminated line that is unreadable, or readable JSON that fails the key, sequence,
+  schema, run-id or digest check, wherever it is, throws `JournalCorruptError` with the run, file and line number: a durable,
   acknowledged record is never deleted.
 
 What the file store does not do:

@@ -21,6 +21,8 @@ const WIDGET_KEY = "auto-pi-lot";
 const WIDGET_LINES = 8;
 /** Longest stderr tail kept for an error notice, in characters. */
 const STDERR_TAIL_CHARS = 2000;
+/** Longest a read-only `status` or `inspect` child may run before it is terminated. */
+const READ_TIMEOUT_MS = 30_000;
 
 /** The part of a child process the extension uses. */
 export interface GraphChild {
@@ -46,6 +48,8 @@ export interface GraphCommandDeps {
   /** Returns the path of the CLI entry point. Defaults to `AUTO_PI_LOT_CLI`, else the sibling package build. */
   readonly cliPath?: () => string;
   readonly env?: NodeJS.ProcessEnv;
+  /** Time limit for `status` and `inspect` children, in milliseconds. Defaults to 30 s. */
+  readonly readTimeoutMs?: number;
 }
 
 export interface GraphCommand {
@@ -105,13 +109,29 @@ export function createGraphCommand(deps: GraphCommandDeps = {}): GraphCommand {
   const env = deps.env ?? process.env;
   const cliPath =
     deps.cliPath ?? (() => env.AUTO_PI_LOT_CLI ?? fileURLToPath(new URL("../../cli/dist/index.js", import.meta.url)));
-  let active: { readonly child: GraphChild; readonly label: string; interrupted: boolean } | null = null;
+  const readTimeoutMs = deps.readTimeoutMs ?? READ_TIMEOUT_MS;
+  let active: {
+    readonly child: GraphChild;
+    readonly label: string;
+    interrupted: boolean;
+    terminated: boolean;
+  } | null = null;
 
-  /** One SIGINT per run: the CLI treats a second one as a forced exit that keeps its lock files. */
-  function interrupt(): boolean {
-    if (active === null || active.interrupted) return false;
-    active.interrupted = true;
-    active.child.kill("SIGINT");
+  /**
+   * One SIGINT per run: the CLI treats a second one as a forced exit that keeps its lock files.
+   * An explicit second cancel sends one SIGTERM for a run stuck in its abort; never SIGKILL, which
+   * would orphan the check process groups.
+   */
+  function interrupt(escalate = false): boolean {
+    if (active === null) return false;
+    if (!active.interrupted) {
+      active.interrupted = true;
+      active.child.kill("SIGINT");
+      return true;
+    }
+    if (!escalate || active.terminated) return false;
+    active.terminated = true;
+    active.child.kill("SIGTERM");
     return true;
   }
 
@@ -132,9 +152,14 @@ export function createGraphCommand(deps: GraphCommandDeps = {}): GraphCommand {
       const finish = (result: CliResult) => {
         if (settled) return;
         settled = true;
+        clearTimeout(timer);
         resolve(result);
       };
       const child = startChild(process.execPath, [cli, ...args], { cwd, env });
+      const timer = setTimeout(() => {
+        child.kill("SIGTERM");
+        finish({ code: null, stdout, stderr: `${stderr}timed out after ${readTimeoutMs / 1000} s` });
+      }, readTimeoutMs);
       child.stdout?.on("data", (chunk: Buffer | string) => {
         stdout += chunk.toString();
       });
@@ -165,7 +190,7 @@ export function createGraphCommand(deps: GraphCommandDeps = {}): GraphCommand {
     const cli = resolveCli(notify);
     if (cli === null) return;
     const child = startChild(process.execPath, [cli, ...cliArgs], { cwd: ctx.cwd, env });
-    active = { child, label, interrupted: false };
+    active = { child, label, interrupted: false, terminated: false };
     ui.setStatus(WIDGET_KEY, `graph: running ${label}`);
 
     let stdout = "";
@@ -320,11 +345,16 @@ export function createGraphCommand(deps: GraphCommandDeps = {}): GraphCommand {
           notify("No graph run is active in this Pi session.", "info");
           return;
         }
-        if (!interrupt()) {
+        if (!interrupt(true)) {
           notify(`Already cancelling graph run ${active.label}; waiting for it to stop.`, "info");
           return;
         }
-        notify(`Cancelling graph run ${active.label}; waiting for it to stop.`, "info");
+        notify(
+          active.terminated
+            ? `Graph run ${active.label} did not stop; sent SIGTERM.`
+            : `Cancelling graph run ${active.label}; waiting for it to stop.`,
+          "info",
+        );
         return;
       case "status":
         await status(ctx);

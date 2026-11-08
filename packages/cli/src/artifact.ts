@@ -47,6 +47,11 @@ export async function runArtifact(args: readonly string[]): Promise<number> {
   // On a terminal, control sequences in a log (a test that prints OSC or CSI codes) are shown escaped
   // rather than executed; piped output stays byte-exact.
   const out = process.stdout.isTTY ? Buffer.from(sanitizeLine(Buffer.from(bytes).toString("utf8")), "utf8") : bytes;
-  await new Promise<void>((done, fail) => process.stdout.write(out, (error) => (error ? fail(error) : done())));
+  // A reader that closes early (`artifact <id> | head`) is not a failure.
+  await new Promise<void>((done, fail) =>
+    process.stdout.write(out, (error) =>
+      error && (error as NodeJS.ErrnoException).code !== "EPIPE" ? fail(error) : done(),
+    ),
+  );
   return 0;
 }

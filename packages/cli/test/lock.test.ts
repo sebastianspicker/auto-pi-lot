@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
@@ -47,4 +47,18 @@ test("partial lock acquisition rolls back and never removes another owner", asyn
   await writeFile(first, "replacement");
   await release();
   assert.equal(await readFile(first, "utf8"), "replacement");
+});
+
+test("a lock held by a dead process names its owner and says the process was not found", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "apl-lock-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const file = join(dir, "run.lock");
+  const pid = spawnSync(process.execPath, ["-e", ""]).pid;
+  await writeFile(file, `${JSON.stringify({ pid, hostname: hostname(), startedAt: "2026-01-01T00:00:00.000Z" })}\n`);
+  await assert.rejects(acquireLock(file, dir), (error: Error) => {
+    assert.match(error.message, new RegExp(`pid ${pid} on host ${hostname()} since 2026-01-01T00:00:00.000Z`));
+    assert.match(error.message, /not found/);
+    return true;
+  });
+  assert.match(await readFile(file, "utf8"), /startedAt/, "the lock is never stolen");
 });

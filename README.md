@@ -175,12 +175,14 @@ Limits on tokens and retries are not a monetary spending guarantee.
 Before the first attempt of a new Pi run, auto-pi-lot records a **restore point**. It is a commit
 of the files in the git repository that contains the workspace, kept under
 `refs/auto-pi-lot/restore/<runId>`. It includes uncommitted changes and untracked files that are
-not ignored. It leaves out `.auto-pi-lot/`, and records submodules only as their commit, not
+not ignored; gitignored files are not included. It leaves out `.auto-pi-lot/`, and records submodules only as their commit, not
 their files. HEAD, the index and your files are not
 touched, and no hooks run. If the tree had uncommitted changes, the run warns and edits on top
 of them. `run` prints the ref and reports it as `restorePoint`. To bring files back to that
-state, run `git restore --source=refs/auto-pi-lot/restore/<runId> --worktree -- .` at the
-repository root yourself. Files the run created are not removed by that; check `git status`.
+state, run `git -C <repository root> restore --source=refs/auto-pi-lot/restore/<runId> --worktree -- <workspace path>`
+yourself; `run` prints the exact command, with the workspace path relative to the repository
+root (`.` when the workspace is the root). It overwrites edits you made in that path after the
+run started too. Files the run created are not removed by that; check `git status`.
 auto-pi-lot never restores anything on its own. Delete old restore points with
 `git update-ref -d <ref>`.
 

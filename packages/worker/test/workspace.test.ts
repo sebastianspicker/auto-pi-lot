@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { lstat, mkdir, mkdtemp, readFile, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { promisify } from "node:util";
 
 import {
   changedPaths,
@@ -169,6 +171,62 @@ test("listing falls back to a walk when git fails, skipping .git, node_modules a
   assert.notEqual(await fingerprintWorkspace(root, { execFile: failingGit }), first);
 });
 
+test("listing rethrows a git failure that is not 'not a git repository'", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "apl-workspace-"));
+  await writeFile(path.join(root, "a.txt"), "A");
+  const refusing = async (): Promise<{ stdout: string }> => {
+    throw new Error("fatal: detected dubious ownership in repository");
+  };
+  await assert.rejects(listWorkspaceFiles(root, refusing), /dubious ownership/);
+});
+
+test("listing walks the directory when git is not installed", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "apl-workspace-"));
+  await writeFile(path.join(root, "a.txt"), "A");
+  const missing = async (): Promise<{ stdout: string }> => {
+    throw Object.assign(new Error("spawn git ENOENT"), { code: "ENOENT" });
+  };
+  assert.deepEqual(await listWorkspaceFiles(root, missing), ["a.txt"]);
+});
+
+test("a streamed file hash equals the whole-file digest, and a read error names the path", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "apl-workspace-"));
+  const big = "x".repeat(300_000);
+  await writeFile(path.join(root, "big.txt"), big);
+  const expected = createHash("sha256")
+    .update(`big.txt\0${sha(big)}\n`)
+    .digest("hex");
+  const listing = { listFiles: async () => ["big.txt"] };
+  assert.equal(await fingerprintWorkspace(root, listing), `sha256:${expected}`);
+  assert.equal(await fingerprintWorkspace(root, { ...listing, cache: createFingerprintCache() }), `sha256:${expected}`);
+
+  const gone = { listFiles: async () => ["gone.txt"], lstat: async (): Promise<FileKind> => "file" };
+  await assert.rejects(fingerprintWorkspace(root, gone), /cannot read workspace file gone\.txt/);
+});
+
+test("edits inside a nested git repository change the snapshot", async (t) => {
+  const git = promisify(execFile);
+  const root = await mkdtemp(path.join(tmpdir(), "apl-nested-"));
+  try {
+    await git("git", ["init", "-q", root]);
+    await mkdir(path.join(root, "inner"));
+    await git("git", ["init", "-q", path.join(root, "inner")]);
+  } catch {
+    t.skip("git is not available");
+    return;
+  }
+  await writeFile(path.join(root, "top.txt"), "T");
+  await writeFile(path.join(root, "inner", "f.txt"), "one");
+  const before = await snapshotWorkspace(root);
+  assert.ok(before.entries.has("inner/"));
+  await writeFile(path.join(root, "inner", "f.txt"), "two");
+  const after = await snapshotWorkspace(root);
+  assert.notEqual(after.digest, before.digest);
+  assert.deepEqual(changedPaths(before, after), ["inner/"]);
+  await writeFile(path.join(root, "inner", "g.txt"), "new");
+  assert.notEqual((await snapshotWorkspace(root)).digest, after.digest);
+});
+
 const HOUR_NS = 3_600_000_000_000n;
 const wallNs = (): bigint => BigInt(Date.now()) * 1_000_000n;
 const LISTING = ["a.txt", "src/b.txt", "link"];
@@ -248,6 +306,15 @@ test("an entry hashed less than 2 s after the file's ctime or mtime is read agai
   future.reads.length = 0;
   await fingerprintWorkspace(future.root, future.deps(wallNs() + HOUR_NS));
   assert.deepEqual(future.reads, ["a.txt"]);
+});
+
+test("cache entries for paths that left the listing are dropped", async () => {
+  const { root, deps } = await cacheFixture();
+  const warm = deps(wallNs() + HOUR_NS);
+  await fingerprintWorkspace(root, warm);
+  assert.equal(warm.cache?.entries.size, 2);
+  await fingerprintWorkspace(root, { ...warm, listFiles: async () => ["a.txt", "link"] });
+  assert.deepEqual([...(warm.cache?.entries.keys() ?? [])], [path.join(root, "a.txt")]);
 });
 
 test("a deleted file drops out of the cache and fingerprints as deleted", async () => {

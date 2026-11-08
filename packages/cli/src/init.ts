@@ -103,12 +103,12 @@ export async function runInit(args: readonly string[]): Promise<number> {
     console.error(INIT_USAGE);
     return 1;
   }
-  const workspace = resolve(parsed.options.workspace ?? process.cwd());
-  const workspaceProblem = await checkWorkspace(workspace);
-  if (workspaceProblem !== null) {
-    console.error(workspaceProblem);
+  const checked = await checkWorkspace(resolve(parsed.options.workspace ?? process.cwd()));
+  if (!checked.ok) {
+    console.error(checked.error);
     return 1;
   }
+  const workspace = checked.workspace;
   const configPath = join(workspace, CONFIG_FILE);
   const planPath = join(workspace, PLAN_FILE);
   for (const path of [configPath, planPath]) {

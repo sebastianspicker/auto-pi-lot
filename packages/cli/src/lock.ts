@@ -3,6 +3,34 @@ import { lstat, mkdir, open, readFile, unlink } from "node:fs/promises";
 import { hostname } from "node:os";
 import { dirname } from "node:path";
 
+/** The "lock exists" message, with the owner the file records and whether that process is gone. */
+export async function lockMessage(file: string): Promise<string> {
+  let holder = "";
+  try {
+    const {
+      pid,
+      hostname: host,
+      startedAt,
+    } = JSON.parse(await readFile(file, "utf8")) as {
+      pid: number;
+      hostname: string;
+      startedAt: string;
+    };
+    holder = ` Held by pid ${pid} on host ${host} since ${startedAt}`;
+    if (host === hostname()) {
+      try {
+        process.kill(pid, 0);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ESRCH") holder += " (process not found)";
+      }
+    }
+    holder += ".";
+  } catch {
+    // An unreadable or foreign lock file: the generic message still applies.
+  }
+  return `Run lock exists at ${file}.${holder} Another run may be active. After confirming its process and checks have stopped, remove this lock file and retry.`;
+}
+
 /** Advisory ownership between CLI processes. Never steal a lock from a potentially live writer. */
 export async function acquireLock(file: string, workspace: string): Promise<() => Promise<void>> {
   await mkdir(dirname(file), { recursive: true });
@@ -12,9 +40,7 @@ export async function acquireLock(file: string, workspace: string): Promise<() =
     handle = await open(file, "wx", 0o600);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-    throw new Error(
-      `Run lock exists at ${file}. Another run may be active. After confirming its process and checks have stopped, remove this lock file and retry.`,
-    );
+    throw new Error(await lockMessage(file));
   }
   try {
     await handle.writeFile(owner);

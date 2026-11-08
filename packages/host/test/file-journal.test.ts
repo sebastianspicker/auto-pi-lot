@@ -178,6 +178,37 @@ test("a torn tail is dropped on read and truncated before the next append", asyn
   });
 });
 
+test("a newline-terminated unreadable last line is corrupt; an unterminated one is torn", async () => {
+  await withDir(async (dir) => {
+    const store = new FileJournalStore(dir);
+    await store.append(event("r", 1));
+    await store.append(event("r", 2));
+    const path = store.pathFor("r");
+    const damaged = (await readFile(path, "utf8")).replace('{"seq":2', '{seq":2');
+    await writeFile(path, damaged, "utf8");
+    await assert.rejects(new FileJournalStore(dir).read("r"), JournalCorruptError);
+    await assert.rejects(new FileJournalStore(dir).append(event("r", 3)), JournalCorruptError);
+    assert.equal(await readFile(path, "utf8"), damaged);
+
+    await writeFile(path, `${(await lines(path))[0]}\n{seq`, "utf8");
+    assert.equal((await new FileJournalStore(dir).read("r")).tornTail, true);
+  });
+});
+
+test("a second store appending to the same run is refused instead of duplicating a seq", async () => {
+  await withDir(async (dir) => {
+    const a = new FileJournalStore(dir);
+    const b = new FileJournalStore(dir);
+    await a.append(event("r", 1));
+    await b.append(event("r", 2));
+    await assert.rejects(a.append(event("r", 3)), /another writer/);
+    same((await new FileJournalStore(dir).read("r")).events, [event("r", 1), event("r", 2)]);
+    // The refused store re-reads the file and carries on with the right seq.
+    await a.append(event("r", 3));
+    same((await a.read("r")).events, [event("r", 1), event("r", 2), event("r", 3)]);
+  });
+});
+
 test("a complete last line that is invalid is corrupt, never dropped", async () => {
   async function lastLine(record: unknown): Promise<unknown> {
     let caught: unknown;

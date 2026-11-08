@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
+import { spawn, spawnSync } from "node:child_process";
+import { mkdir, mkdtemp, readFile, realpath, symlink, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -8,9 +8,10 @@ import { fileURLToPath } from "node:url";
 
 import { lintGraph, ProjectConfigSchema, parseDto, validateGraph, validateGraphChecks } from "@auto-pi-lot/core";
 
-import { encodeRunId } from "@auto-pi-lot/host";
+import { encodeRunId, FileArtifactStore } from "@auto-pi-lot/host";
 
 import { demoGraphInput } from "../src/demo.js";
+import { runtimePaths } from "../src/paths.js";
 import { checkWorkspace, sanitizeLine } from "../src/run.js";
 
 const entry = fileURLToPath(new URL("../dist/index.js", import.meta.url));
@@ -275,6 +276,17 @@ test("run --model without a slash exits 1", () => {
   assert.match(result.stderr, /--model must be <provider>\/<id>/);
 });
 
+test("run --model and --thinking are refused with the fake worker", () => {
+  for (const flag of [
+    ["--model", "a/b"],
+    ["--thinking", "low"],
+  ]) {
+    const result = run("run", "--dry-run", ...flag);
+    assert.equal(result.status, 1, result.stdout);
+    assert.match(result.stderr, /only apply to --worker pi/);
+  }
+});
+
 test("run --worker pi refuses a plan naming an unknown check profile before opening a session", async () => {
   const workspace = await tempDir();
   const file = await writeGraph(
@@ -483,7 +495,38 @@ test("sanitizeLine escapes control characters and keeps newlines and tabs", () =
 });
 
 test("checkWorkspace refuses the file system root and the home directory", async () => {
-  assert.match((await checkWorkspace("/")) ?? "", /Refusing to use/);
-  assert.match((await checkWorkspace(homedir())) ?? "", /Refusing to use/);
-  assert.equal(await checkWorkspace(await tempDir()), null);
+  assert.match(errorOf(await checkWorkspace("/")), /Refusing to use/);
+  assert.match(errorOf(await checkWorkspace(homedir())), /Refusing to use/);
+  assert.equal((await checkWorkspace(await tempDir())).ok, true);
+});
+
+function errorOf(result: Awaited<ReturnType<typeof checkWorkspace>>): string {
+  return result.ok ? "" : result.error;
+}
+
+test("checkWorkspace resolves a symlinked workspace and judges it by its target", async () => {
+  const dir = await tempDir();
+  const target = join(dir, "target");
+  await mkdir(target);
+  await symlink(target, join(dir, "link"));
+  const accepted = await checkWorkspace(join(dir, "link"));
+  assert.deepEqual(accepted, { ok: true, workspace: await realpath(target) });
+  await symlink(homedir(), join(dir, "home-link"));
+  assert.match(errorOf(await checkWorkspace(join(dir, "home-link"))), /Refusing to use/);
+});
+
+test("artifact exits 0 without an EPIPE message when the reader closes stdout early", async () => {
+  const workspace = await tempDir();
+  const id = await new FileArtifactStore(runtimePaths(workspace).artifacts).put(Buffer.alloc(8 * 1_048_576, "x"));
+  const child = spawn(process.execPath, [entry, "artifact", id, "--workspace", workspace], {
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let stderr = "";
+  child.stderr.setEncoding("utf8").on("data", (chunk: string) => {
+    stderr += chunk;
+  });
+  child.stdout.once("data", () => child.stdout.destroy());
+  const code = await new Promise<number | null>((done) => child.on("close", done));
+  assert.equal(code, 0, stderr);
+  assert.equal(stderr, "");
 });

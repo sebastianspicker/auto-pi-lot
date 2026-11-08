@@ -59,7 +59,7 @@ interface SpawnCall {
 
 const CLI = fileURLToPath(import.meta.url);
 
-function setup(cliPath: () => string = () => CLI) {
+function setup(cliPath: () => string = () => CLI, readTimeoutMs?: number) {
   const calls: SpawnCall[] = [];
   const notices: Array<{ message: string; level: string }> = [];
   const widgets: Array<string[] | undefined> = [];
@@ -67,6 +67,7 @@ function setup(cliPath: () => string = () => CLI) {
   const graph = createGraphCommand({
     cliPath,
     env: { PATH: "fake" },
+    ...(readTimeoutMs === undefined ? {} : { readTimeoutMs }),
     spawn: (command, args, options) => {
       const child = new FakeChild();
       calls.push({ command, args, options, child });
@@ -430,13 +431,30 @@ test("a run outlives a stale Pi context: progress and the final notice never thr
 });
 
 test("cancel and shutdown send SIGINT once per run, because a second SIGINT forces the CLI to exit", async () => {
+  const { graph, calls, ctx } = setup();
+  await graph.handler("run plan.json", ctx);
+  await graph.handler("cancel", ctx);
+  graph.shutdown();
+  graph.shutdown();
+  assert.deepEqual(calls[0]?.child.signals, ["SIGINT"]);
+});
+
+test("a second cancel sends SIGTERM once, never SIGKILL, so a stuck run does not block later runs", async () => {
   const { graph, calls, notices, ctx } = setup();
   await graph.handler("run plan.json", ctx);
   await graph.handler("cancel", ctx);
   await graph.handler("cancel", ctx);
-  graph.shutdown();
-  assert.deepEqual(calls[0]?.child.signals, ["SIGINT"]);
+  await graph.handler("cancel", ctx);
+  assert.deepEqual(calls[0]?.child.signals, ["SIGINT", "SIGTERM"]);
   assert.match(notices.at(-1)?.message ?? "", /already cancelling/i);
+});
+
+test("a status child that never closes is terminated and reported as an error", async () => {
+  const { graph, calls, notices, ctx } = setup(undefined, 10);
+  await graph.handler("status", ctx);
+  assert.deepEqual(calls[0]?.child.signals, ["SIGTERM"]);
+  assert.equal(notices[0]?.level, "error");
+  assert.match(notices[0]?.message ?? "", /graph status failed .*timed out after/);
 });
 
 test("an error event after the child started does not free the slot while it still runs", async () => {

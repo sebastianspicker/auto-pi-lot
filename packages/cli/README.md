@@ -77,7 +77,10 @@ The policy is the defaults (fake: 2 concurrent, 2 attempts per node; pi: 1 concu
 by `config.policy`, overridden by `--max-concurrent`, `--max-attempts` and `--max-writers`
 (positive integers). Runtime state lives under `<workspace>/.auto-pi-lot/` (gitignored):
 A new pi run first records a restore point. It commits the files of the repository that
-contains the workspace, except `.auto-pi-lot/` at any depth (submodules only as their commit).
+contains the workspace, except gitignored files (not included) and `.auto-pi-lot/` at any depth
+(submodules only as their commit). The printed restore command is limited to the workspace's
+path relative to the repository root (`.` when they are the same) and, like any restore,
+overwrites edits made in that path after the run started.
 It does this through a temporary index inside the git directory, so HEAD, the index and the
 files stay as they are, and keeps the commit under
 `refs/auto-pi-lot/restore/<encoded runId, dots as %2e>`. The ref is printed on stderr, along

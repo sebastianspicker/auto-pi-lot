@@ -52,9 +52,15 @@ import { EMPTY_CONFIG, loadConfig } from "./config.js";
 import { demoGraphInput } from "./demo.js";
 import { type AttemptEvidence, summarizeEvidence } from "./evidence-summary.js";
 import { isGitWorkTree } from "./git.js";
-import { acquireRunLocks } from "./lock.js";
+import { acquireRunLocks, lockMessage } from "./lock.js";
 import { RUNTIME_DIR, runtimePaths, sessionDirFor } from "./paths.js";
-import { createRestorePoint, discardRestorePoint, type RestorePoint } from "./restore.js";
+import {
+  createRestorePoint,
+  discardRestorePoint,
+  type RestorePoint,
+  removeActiveRestoreIndex,
+  restoreHint,
+} from "./restore.js";
 import {
   attemptNodes,
   type EventSummary,
@@ -163,6 +169,10 @@ export function parseRunArgs(
     const number = positiveInteger(raw);
     if (number === null) return { ok: false, error: `Unknown or incomplete argument: ${flag}` };
     limits[key] = number;
+  }
+
+  if (worker === "fake" && (values.has("--model") || values.has("--thinking"))) {
+    return { ok: false, error: "--model and --thinking only apply to --worker pi" };
   }
 
   let model: ModelRoute | null = null;
@@ -286,17 +296,24 @@ export function sanitizeLine(line: string): string {
   return out;
 }
 
-/** A workspace must be a directory, and never the file system root or the home directory. */
-export async function checkWorkspace(workspace: string): Promise<string | null> {
-  if (workspace === parse(workspace).root || workspace === resolve(homedir())) {
-    return `Refusing to use ${workspace} as the workspace; run inside a project directory`;
-  }
+/**
+ * A workspace must be a directory, and never the file system root or the home directory. The
+ * checks apply to the resolved path, so a symlinked workspace is accepted and judged by its target.
+ */
+export async function checkWorkspace(
+  workspace: string,
+): Promise<{ ok: true; workspace: string } | { ok: false; error: string }> {
+  let resolved: string;
   try {
-    if (!(await lstat(workspace)).isDirectory()) return `${workspace} is not a directory`;
+    resolved = await realpath(workspace);
   } catch {
-    return `${workspace} does not exist`;
+    return { ok: false, error: `${workspace} does not exist` };
   }
-  return null;
+  if (resolved === parse(resolved).root || resolved === (await realpath(homedir()).catch(() => resolve(homedir())))) {
+    return { ok: false, error: `Refusing to use ${resolved} as the workspace; run inside a project directory` };
+  }
+  if (!(await lstat(resolved)).isDirectory()) return { ok: false, error: `${workspace} is not a directory` };
+  return { ok: true, workspace: resolved };
 }
 
 async function exists(path: string): Promise<boolean> {
@@ -388,18 +405,12 @@ export async function runRun(args: readonly string[]): Promise<number> {
   }
   const { options } = parsed;
   const usePi = options.worker === "pi";
-  let workspace = resolve(options.workspace ?? process.cwd());
-  const workspaceProblem = await checkWorkspace(workspace);
-  if (workspaceProblem !== null) {
-    console.error(workspaceProblem);
+  const checkedWorkspace = await checkWorkspace(resolve(options.workspace ?? process.cwd()));
+  if (!checkedWorkspace.ok) {
+    console.error(checkedWorkspace.error);
     return 1;
   }
-  workspace = await realpath(workspace);
-  const canonicalProblem = await checkWorkspace(workspace);
-  if (canonicalProblem !== null) {
-    console.error(canonicalProblem);
-    return 1;
-  }
+  const workspace = checkedWorkspace.workspace;
   const paths = runtimePaths(workspace, options.journalDir ?? undefined);
   const journalRelative = relative(workspace, paths.journal);
   if (
@@ -546,13 +557,10 @@ export async function runRun(args: readonly string[]): Promise<number> {
     return 1;
   }
   const locks = [join(paths.journal, ".writer.lock"), ...(usePi ? [join(workspace, RUNTIME_DIR, "run.lock")] : [])];
-  for (const file of locks) {
-    if (await exists(file)) {
-      console.error(
-        `Run lock exists at ${file}; another run may be active. Confirm its process and checks have stopped before removing a stale lock.`,
-      );
-      return 1;
-    }
+  // A dry run starts nothing, so it reports held locks; a real run fails on them in acquireRunLocks.
+  const heldLocks: string[] = [];
+  if (options.dryRun) {
+    for (const file of locks) if (await exists(file)) heldLocks.push(await lockMessage(file));
   }
   if (options.dryRun) {
     console.log(
@@ -572,6 +580,7 @@ export async function runRun(args: readonly string[]): Promise<number> {
           finalCheckIds,
           modelReadiness: "not_checked",
           warnings,
+          heldLocks,
           nodes: graph.nodes.map((node) => ({
             ...node,
             limits: { ...node.limits, timeoutMs: node.limits.timeoutMs ?? DEFAULT_ATTEMPT_TIMEOUT_MS },
@@ -612,13 +621,16 @@ export async function runRun(args: readonly string[]): Promise<number> {
       // shutdown synchronously signals all running check groups before its first await.
       void sessionWorker?.shutdown();
       verifier?.cancel();
-      process.exit(130); // Keep ownership files for explicit recovery after a forced exit.
+      removeActiveRestoreIndex();
+      // Keep ownership files for explicit recovery: check groups may still be stopping (decision 0013).
+      process.exit(130);
     }
     console.error("cancelling…");
     host?.cancel("operator interrupt").catch(() => undefined);
   };
   process.on("SIGINT", onSignal);
   process.on("SIGTERM", onSignal);
+  process.on("SIGHUP", onSignal); // A closed terminal must not leave detached checks running.
   try {
     const evidence: EvidenceStore = usePi ? new FileEvidenceStore(paths.evidence) : new MemoryEvidenceStore();
     const nodeOfAttempt = new Map<string, string>();
@@ -656,6 +668,7 @@ export async function runRun(args: readonly string[]): Promise<number> {
             // The model's shell gets the environment checks get: no provider API keys.
             shellEnv: buildCheckEnv,
           });
+          if (interrupts > 0) return 130;
           if (!resumed) {
             restorePoint = await createRestorePoint(workspace, graph.runId);
             if (restorePoint.dirty) {
@@ -663,9 +676,8 @@ export async function runRun(args: readonly string[]): Promise<number> {
                 "warning: the working tree has uncommitted changes or untracked files; they are in the restore point, and the run edits on top of them",
               );
             }
-            console.error(
-              `Restore point ${restorePoint.ref} (${restorePoint.commit.slice(0, 12)}). To bring files back to it, run in ${restorePoint.root}: git restore --source=${restorePoint.ref} --worktree -- .  (files the run creates are not removed)`,
-            );
+            console.error(restoreHint(restorePoint, workspace));
+            if (interrupts > 0) return 130;
           }
           await mkdir(sessionDir, { recursive: true, mode: 0o700 });
         }
@@ -796,6 +808,7 @@ export async function runRun(args: readonly string[]): Promise<number> {
     } finally {
       process.off("SIGINT", onSignal);
       process.off("SIGTERM", onSignal);
+      process.off("SIGHUP", onSignal);
     }
   }
 }

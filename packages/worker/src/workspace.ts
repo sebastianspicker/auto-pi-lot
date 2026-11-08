@@ -1,9 +1,10 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { lstat, readdir, readFile, readlink } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { lstat, readdir, readlink } from "node:fs/promises";
 import path from "node:path";
 
-import { buildCheckEnv } from "./check-runner.js";
+import { buildCheckEnv, isInsideRoot } from "./check-runner.js";
 
 /** The harness's own runtime state; it changes during a run and is never part of the source identity. */
 export const RUNTIME_STATE_DIR = ".auto-pi-lot";
@@ -46,7 +47,7 @@ export function createFingerprintCache(): FingerprintCache {
 export interface WorkspaceDeps {
   /** Relative, `/`-separated paths of the files that make up the tree. */
   listFiles?: (root: string) => Promise<string[]>;
-  /** Used by the default `listFiles` to ask git; a rejection selects the directory walk. */
+  /** Used by the default `listFiles` to ask git; only a "not a git repository" rejection selects the directory walk. */
   execFile?: ExecFileLike;
   /** Must not follow symlinks. `other` (a directory, a socket) is skipped. */
   lstat?: (absolutePath: string) => Promise<FileKind>;
@@ -63,7 +64,12 @@ export interface WorkspaceDeps {
 /** git runs with the same allowlisted environment as a check, so no provider credential reaches it. */
 const defaultExecFile: ExecFileLike = (file, args) =>
   new Promise((resolve, reject) => {
-    const options = { encoding: "utf8" as const, maxBuffer: 256 * 1024 * 1024, env: buildCheckEnv(process.env) };
+    const options = {
+      encoding: "utf8" as const,
+      maxBuffer: 256 * 1024 * 1024,
+      timeout: 60_000,
+      env: buildCheckEnv(process.env),
+    };
     execFile(file, [...args], options, (error, stdout) => {
       if (error !== null) reject(error);
       else resolve({ stdout });
@@ -133,16 +139,18 @@ export async function listWorkspaceFiles(root: string, run: ExecFileLike = defau
       "--exclude-standard",
     ]);
     return stdout.split("\0").filter((entry) => entry.length > 0);
-  } catch {
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    // Only "not a repository" or no git at all selects the walk: both hold for every snapshot, while
+    // a refusal, overflow or timeout can be transient and must not flip the file set.
+    const noGit = (error as NodeJS.ErrnoException | undefined)?.code === "ENOENT";
+    if (!noGit && !/not a git repository/i.test(message)) {
+      throw new Error(`git could not list the workspace at ${root}: ${message}`, { cause: error });
+    }
     const found: string[] = [];
     await walk(root, "", found);
     return found;
   }
-}
-
-function insideRoot(root: string, candidate: string): boolean {
-  const relative = path.relative(root, candidate);
-  return relative !== "" && relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
 }
 
 function isRuntimeState(entry: string): boolean {
@@ -181,7 +189,25 @@ export async function snapshotWorkspace(root: string, deps: WorkspaceDeps = {}):
   const absoluteRoot = path.resolve(root);
   const list = deps.listFiles ?? ((directory: string) => listWorkspaceFiles(directory, deps.execFile));
   const kindOf = deps.lstat ?? defaultLstat;
-  const read = deps.readFile ?? ((file: string) => readFile(file));
+  const hexOf = async (file: string, entry: string): Promise<string> => {
+    try {
+      if (deps.readFile !== undefined)
+        return createHash("sha256")
+          .update(await deps.readFile(file))
+          .digest("hex");
+      const content = createHash("sha256");
+      // Streamed, so a file of any size is never held whole in memory.
+      for await (const chunk of createReadStream(file)) content.update(chunk);
+      return content.digest("hex");
+    } catch (error) {
+      throw new Error(
+        `cannot read workspace file ${entry}: ${error instanceof Error ? error.message : String(error)}`,
+        {
+          cause: error,
+        },
+      );
+    }
+  };
   const target = deps.readlink ?? ((file: string) => readlink(file));
   const cache = deps.cache;
   const statOf = deps.stat ?? defaultStat;
@@ -194,9 +220,12 @@ export async function snapshotWorkspace(root: string, deps: WorkspaceDeps = {}):
     values.set(entry, value);
     hash.update(`${entry}\0${value}\n`);
   };
+  const listed = new Set<string>();
+  const nestedRoots: string[] = [];
   for (const entry of [...new Set(entries)].sort()) {
     const absolute = path.resolve(absoluteRoot, entry);
-    if (!insideRoot(absoluteRoot, absolute)) continue;
+    if (!isInsideRoot(absoluteRoot, absolute, false)) continue;
+    listed.add(absolute);
     if (cache !== undefined) {
       const stat = await statOf(absolute);
       if (stat !== null) {
@@ -206,9 +235,7 @@ export async function snapshotWorkspace(root: string, deps: WorkspaceDeps = {}):
           continue;
         }
         const hashedAtNs = nowNs();
-        const hex = createHash("sha256")
-          .update(await read(absolute))
-          .digest("hex");
+        const hex = await hexOf(absolute, entry);
         cache.entries.set(absolute, { ...stat, hashedAtNs, hex });
         record(entry, hex);
         continue;
@@ -216,14 +243,32 @@ export async function snapshotWorkspace(root: string, deps: WorkspaceDeps = {}):
       cache.entries.delete(absolute);
     }
     const kind = await kindOf(absolute);
-    if (kind === "other") continue;
+    if (kind === "other") {
+      // git lists a nested repository or submodule as one directory entry; fingerprint what is inside it.
+      const isDirectory = await lstat(absolute).then(
+        (stats) => stats.isDirectory(),
+        () => false,
+      );
+      if (isDirectory) {
+        const inner = { ...deps, listFiles: (directory: string) => listWorkspaceFiles(directory, deps.execFile) };
+        record(entry, `nested:${(await snapshotWorkspace(absolute, inner)).digest}`);
+        nestedRoots.push(absolute + path.sep);
+      }
+      continue;
+    }
     if (kind === "missing") {
       record(entry, "deleted");
     } else if (kind === "symlink") {
       record(entry, `symlink:${await target(absolute)}`);
     } else {
-      const content = await read(absolute);
-      record(entry, createHash("sha256").update(content).digest("hex"));
+      record(entry, await hexOf(absolute, entry));
+    }
+  }
+  if (cache !== undefined) {
+    // Entries of paths that left the listing would otherwise stay for the life of the cache.
+    for (const key of cache.entries.keys()) {
+      const inScope = key.startsWith(absoluteRoot + path.sep) && !nestedRoots.some((nested) => key.startsWith(nested));
+      if (inScope && !listed.has(key)) cache.entries.delete(key);
     }
   }
   return { digest: `sha256:${hash.digest("hex")}`, entries: values };

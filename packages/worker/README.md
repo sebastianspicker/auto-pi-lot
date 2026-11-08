@@ -59,9 +59,11 @@ fingerprint function), so it is tested without a model or a real process. It imp
 - **Workspace fingerprint** (`src/workspace.ts`). `sha256` over one sorted line per file (content
   hash, symlink target string, or `deleted`); `npm run fingerprint` (`scripts/source-fingerprint.ts`) calls it too.
   Files are listed with `git -c core.fsmonitor=false ls-files -co --exclude-standard` under the
-  same allowlisted environment as a check, or by walking the directory when git is unavailable
-  (skipping `.git`, `node_modules`, `.auto-pi-lot`). `.auto-pi-lot/` is always excluded and
-  paths outside the root are skipped; a directory replaced by a symbolic link is not detected.
+  same allowlisted environment as a check (60 s timeout), or by walking the directory when the root
+  is not a git repository or git is not installed (skipping `.git`, `node_modules`, `.auto-pi-lot`); any other git failure
+  throws instead of changing the file set. `.auto-pi-lot/` is always excluded and
+  paths outside the root are skipped; a nested repository or submodule (listed by git as one
+  directory) is fingerprinted recursively and recorded as one `nested:` entry; a directory replaced by a symbolic link is not detected.
   An optional `FingerprintCache` (one per `SessionWorker`, `WorkspaceVerifier` and `check` command)
   reuses a file's content hash when its device, inode, size, mtime and ctime are unchanged and both
   times are at least 2 s older than the moment it was hashed (the racy-git rule), so a file written

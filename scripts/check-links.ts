@@ -1,8 +1,8 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, normalize, relative, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-const EXCLUDED_DIRS = new Set(["node_modules", "dist", ".git", "coverage", ".agents", ".claude"]);
+const EXCLUDED_DIRS = new Set(["node_modules", "dist", ".git", "coverage", ".agents", ".claude", ".auto-pi-lot"]);
 
 /** The path of a link target: unwraps `<angle brackets>` and drops an optional `"title"` or `'title'`. */
 function pathOfTarget(target: string): string {
@@ -35,7 +35,7 @@ function withoutCode(markdown: string): string {
 /** Link targets (without any title) found in `](...)` markdown link syntax outside code. */
 export function findLinkTargets(markdown: string): string[] {
   const targets: string[] = [];
-  const linkPattern = /]\(([^)]+)\)/g;
+  const linkPattern = /]\(((?:[^()]|\([^()]*\))+)\)/g;
   const text = withoutCode(markdown);
   let match: RegExpExecArray | null = linkPattern.exec(text);
   while (match !== null) {
@@ -92,7 +92,7 @@ export function checkMarkdownLinks(
   const dir = dirname(sourceFile);
   for (const rawLink of findLinkTargets(markdown)) {
     if (!isCheckableLink(rawLink)) continue;
-    const targetPath = decodePath(stripAnchor(rawLink));
+    const targetPath = decodePath(stripAnchor(rawLink).split("?")[0] ?? "");
     if (targetPath.length === 0) continue;
     const resolved = targetPath.startsWith("/") ? normalize(targetPath.slice(1)) : join(dir, targetPath);
     if (isOutsideRepository(resolved)) continue;
@@ -103,12 +103,13 @@ export function checkMarkdownLinks(
   return errors;
 }
 
-function findMarkdownFiles(root: string): string[] {
+export function findMarkdownFiles(root: string): string[] {
   const results: string[] = [];
   for (const entry of readdirSync(root)) {
     if (EXCLUDED_DIRS.has(entry)) continue;
     const fullPath = join(root, entry);
-    const stats = statSync(fullPath);
+    const stats = lstatSync(fullPath);
+    if (stats.isSymbolicLink()) continue;
     if (stats.isDirectory()) {
       results.push(...findMarkdownFiles(fullPath));
     } else if (entry.endsWith(".md")) {

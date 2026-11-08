@@ -116,8 +116,10 @@ export function validateLedger(ledger: unknown, fileExists: (path: string) => bo
     scenarioIds.add(scenario.id);
   }
 
-  const milestoneIds = new Set(doc.milestones.map((milestone) => milestone.id));
+  const milestoneIds = new Set<string>();
   for (const milestone of doc.milestones) {
+    if (milestoneIds.has(milestone.id)) errors.push(`duplicate milestone ID: ${milestone.id}`);
+    milestoneIds.add(milestone.id);
     for (const packageId of milestone.packages) {
       if (!taskIds.has(packageId)) {
         errors.push(`milestone ${milestone.id} references unknown task: ${packageId}`);

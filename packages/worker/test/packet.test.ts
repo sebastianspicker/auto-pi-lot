@@ -3,7 +3,13 @@ import test from "node:test";
 
 import type { NodeSpec, ResultProposal, ReviewReceipt, Role, WorkerAssignment } from "@auto-pi-lot/core";
 
-import { buildTaskPacket, MAX_PACKET_STRING, ROLE_BRIEFS, type TaskPacketInput } from "../src/index.js";
+import {
+  buildTaskPacket,
+  MAX_CONSUMED_CHARS,
+  MAX_PACKET_STRING,
+  ROLE_BRIEFS,
+  type TaskPacketInput,
+} from "../src/index.js";
 
 function assignmentFor(
   role: Role,
@@ -26,6 +32,7 @@ function assignmentFor(
       ...node,
     },
     consumes: {},
+    proposalsByAttempt: {},
     verifies: [],
     producers: [],
     repairOf: null,
@@ -114,6 +121,39 @@ test("the reader boundary appears for every non-writer role", () => {
   }
 });
 
+test("a cut changed-path list ends with how many paths are not shown", () => {
+  const changedPaths = [
+    "test/weakened.test.js",
+    ...Array.from({ length: 300 }, (_, i) => `pad/a-${String(i).padStart(4, "0")}.txt`),
+  ];
+  const packet = buildTaskPacket(
+    input(
+      "reviewer",
+      { consumed: [{ nodeId: "produce", proposal: { ...proposal, changedPaths }, acceptanceCriteria: [] }] },
+      { verifies: ["produce"] },
+    ),
+  );
+  assert.ok(packet.includes("- test/weakened.test.js"));
+  const shown = packet.split("\n").filter((line) => line.startsWith("- pad/a-")).length;
+  assert.ok(shown < 300);
+  assert.ok(packet.includes(`… ${300 - shown} more paths not shown\n`));
+});
+
+test("the consumed-results section stays within its budget and says how many results it dropped", () => {
+  const consumed = Array.from({ length: 50 }, (_, i) => ({
+    nodeId: `produce-${i}`,
+    proposal: { ...proposal, summary: "s".repeat(MAX_PACKET_STRING), claims: ["c".repeat(MAX_PACKET_STRING)] },
+    acceptanceCriteria: [],
+  }));
+  const packet = buildTaskPacket(input("integrator", { consumed }));
+  const start = packet.indexOf("## Results you build on");
+  const section = packet.slice(start, packet.indexOf("## Output contract"));
+  assert.ok(section.length <= MAX_CONSUMED_CHARS, String(section.length));
+  const shown = section.split("\n").filter((line) => line.startsWith("### produce-")).length;
+  assert.ok(shown > 0 && shown < 50);
+  assert.ok(section.includes(`… ${50 - shown} more results omitted`));
+});
+
 test("a checker marks its candidate and gets the verdict contract", () => {
   const review: ReviewReceipt = {
     kind: "review",
@@ -129,7 +169,7 @@ test("a checker marks its candidate and gets the verdict contract", () => {
   const packet = buildTaskPacket(
     input(
       "verifier",
-      { consumed: [{ nodeId: "produce", proposal, review, acceptanceCriteria: ["Fast"] }] },
+      { consumed: [{ nodeId: "produce", proposal, reviews: [review], acceptanceCriteria: ["Fast"] }] },
       { verifies: ["produce"] },
     ),
   );
@@ -212,7 +252,7 @@ test("model-authored summary, claims and notes are fenced and cannot forge a hea
   const packet = buildTaskPacket(
     input(
       "verifier",
-      { consumed: [{ nodeId: "produce", proposal: hostile, review, acceptanceCriteria: ["Fast"] }] },
+      { consumed: [{ nodeId: "produce", proposal: hostile, reviews: [review], acceptanceCriteria: ["Fast"] }] },
       { verifies: ["produce"] },
     ),
   );

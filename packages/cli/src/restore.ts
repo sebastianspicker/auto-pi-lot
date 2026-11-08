@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
+import { unlinkSync } from "node:fs";
 import { unlink } from "node:fs/promises";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 
 import { encodeRunId } from "@auto-pi-lot/host";
 
@@ -30,6 +31,24 @@ export function restoreRefFor(runId: string): string {
       ? name
       : `${name.slice(0, 200)}%%${createHash("sha256").update(runId).digest("hex").slice(0, 16)}`;
   return `refs/auto-pi-lot/restore/${fitted}`;
+}
+
+/** The message printed after a restore point is taken; the command is limited to the workspace's own path. */
+export function restoreHint(point: RestorePoint, workspace: string): string {
+  const pathspec = relative(point.root, workspace) || ".";
+  return `Restore point ${point.ref} (${point.commit.slice(0, 12)}). To bring ${pathspec === "." ? "the repository" : pathspec} back to it, run: git -C ${point.root} restore --source=${point.ref} --worktree -- ${pathspec}  (gitignored files are not included in the restore point; files the run creates are not removed; edits made in that path after the run started are overwritten too)`;
+}
+
+let activeIndex: string | null = null;
+
+/** Deletes the temporary index of a restore point still being built; synchronous, for the forced-exit path. */
+export function removeActiveRestoreIndex(): void {
+  if (activeIndex === null) return;
+  try {
+    unlinkSync(activeIndex);
+  } catch {
+    // Already gone.
+  }
 }
 
 const IDENTITY = {
@@ -77,6 +96,7 @@ export async function createRestorePoint(workspace: string, runId: string): Prom
     );
   }
   const index = join(gitDir, `auto-pi-lot-restore-index-${process.pid}`);
+  activeIndex = index;
   try {
     const env = { GIT_INDEX_FILE: index };
     // Start from HEAD so tracked files that also match an ignore pattern stay in the snapshot.
@@ -93,6 +113,7 @@ export async function createRestorePoint(workspace: string, runId: string): Prom
     const dirty = head === null || tree !== (await required(root, ["rev-parse", `${head}^{tree}`]));
     return { ref, commit, root, dirty };
   } finally {
+    activeIndex = null;
     await unlink(index).catch(() => undefined); // Absent when git failed before writing it.
   }
 }

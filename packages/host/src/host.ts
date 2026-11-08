@@ -468,6 +468,12 @@ export class RunHost {
           fencingToken,
           node,
           consumes: command.consumes,
+          proposalsByAttempt: Object.fromEntries(
+            Object.values(command.consumes).flatMap((consumed) => {
+              const proposalDigest = this.#proposalDigests.get(consumed);
+              return proposalDigest === undefined ? [] : [[consumed, proposalDigest]];
+            }),
+          ),
           verifies: this.#verifiedBy(command.nodeId),
           producers: graph.nodes.filter((candidate) => Object.hasOwn(command.consumes, candidate.id)),
           repairOf: command.repairOf,

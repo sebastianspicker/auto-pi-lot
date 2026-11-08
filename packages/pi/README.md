@@ -78,8 +78,8 @@ pi --extension <repo>/packages/pi/dist/extension.js
 | --- | --- |
 | `/graph run <plan file> [--run-id <id>]` | Starts `run --worker pi --graph <plan>` in the background. It spends model credit and edits the checkout. Stderr progress shows in a widget (last 8 lines) and a status entry; on exit a one-line summary is shown |
 | `/graph resume <runId>` | Starts `run --worker pi --resume <runId>` the same way |
-| `/graph cancel` | Sends SIGINT to the active run once, which the CLI treats as a graceful cancel; repeating it (or quitting Pi) sends nothing more, because a second SIGINT would force the CLI to exit and keep its locks |
-| `/graph status` | Runs `status` and lists `runId: status`, plus whether this Pi session has a run active |
+| `/graph cancel` | Sends SIGINT to the active run once, which the CLI treats as a graceful cancel; quitting Pi sends nothing more, because a second SIGINT would force the CLI to exit and keep its locks. A second `/graph cancel` while the run is still active sends one SIGTERM (never SIGKILL, which would orphan check processes), so a run stuck in its abort does not block later runs |
+| `/graph status` | Runs `status` and lists `runId: status`, plus whether this Pi session has a run active. `status` and `inspect` stop their child with SIGTERM and report an error after 30 s |
 | `/graph inspect <runId>` | Runs `inspect` and shows the status, each node's disposition, the session directory and the final verification outcome |
 | `/graph` or `/graph help` | Shows the usage |
 

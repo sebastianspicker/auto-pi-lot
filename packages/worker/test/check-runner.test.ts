@@ -20,12 +20,31 @@ import {
   CHECK_ENV_ALLOWLIST,
   type ChildLike,
   checkDefinitionDigest,
+  isInsideRoot,
   parseTestCount,
   type RunCheckInput,
   runCheck,
   type SpawnLike,
   type SpawnOptionsLike,
 } from "../src/index.js";
+
+test("isInsideRoot: containment with and without the root itself", () => {
+  const root = path.resolve("/w/root");
+  const cases: [string, boolean, boolean][] = [
+    // candidate, root counts as inside, root does not count
+    [".", true, false],
+    ["..", false, false],
+    ["../x", false, false],
+    ["/elsewhere", false, false],
+    ["a/../..", false, false],
+    ["a/b", true, true],
+  ];
+  for (const [candidate, withRoot, withoutRoot] of cases) {
+    const resolved = path.resolve(root, candidate);
+    assert.equal(isInsideRoot(root, resolved, true), withRoot, `${candidate} with root`);
+    assert.equal(isInsideRoot(root, resolved, false), withoutRoot, `${candidate} without root`);
+  }
+});
 
 class MemoryArtifacts implements ArtifactStore {
   readonly blobs = new Map<string, Uint8Array>();

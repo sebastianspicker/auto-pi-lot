@@ -62,7 +62,8 @@ export type SessionOpener = (request: SessionOpenRequest) => Promise<CodingSessi
 const MAX_CHANGED_PATHS = 500;
 
 /** Package manifests, npm config and test files: listed first, so padding files cannot push them past the cap. */
-const CHECK_RELEVANT = /(^|\/)(package\.json|\.npmrc)$|test|spec/i;
+const CHECK_RELEVANT =
+  /(^|\/)(package\.json|\.npmrc|\.gitignore)$|(^|\/)(tests?|__tests__|specs?)\/|(^|\/)test_[^/]*\.py$|[._-](test|spec)\.([cm]?[jt]sx?|py|go|rb|rs|java|kt|cs|php|swift)$/i;
 
 function checkRelevantFirst(paths: readonly string[]): string[] {
   return [
@@ -187,7 +188,7 @@ export class SessionWorker implements WorkerPort {
 
     // 1. Resolve the declared checks.
     const profiles: CheckProfile[] = [];
-    for (const id of node.checks ?? []) {
+    for (const id of new Set(node.checks ?? [])) {
       const profile = this.#options.checks.find((candidate) => candidate.id === id);
       if (profile === undefined) {
         this.#say(`node ${node.id} names unknown check profile ${id}`);
@@ -207,11 +208,17 @@ export class SessionWorker implements WorkerPort {
     const reviews = records.filter((record): record is ReviewReceipt => record.kind === "review");
     const consumed: ConsumedResult[] = [];
     for (const [producerId, producerAttemptId] of Object.entries(assignment.consumes)) {
-      const proposal = proposals.find((candidate) => candidate.attemptId === producerAttemptId);
+      // Only the journaled proposal counts: a record planted in the store for the same attempt does not.
+      const digest = assignment.proposalsByAttempt[producerAttemptId];
+      const proposal = proposals.find(
+        (candidate) => candidate.id === digest && candidate.attemptId === producerAttemptId,
+      );
       if (proposal === undefined) continue;
-      const review = reviews.find((candidate) => candidate.candidateAttemptId === producerAttemptId);
+      const attemptReviews = reviews.filter(
+        (candidate) => candidate.candidateAttemptId === producerAttemptId && candidate.candidateDigest === proposal.id,
+      );
       const acceptanceCriteria = assignment.producers.find((spec) => spec.id === producerId)?.acceptanceCriteria ?? [];
-      consumed.push({ nodeId: producerId, proposal, acceptanceCriteria, ...(review === undefined ? {} : { review }) });
+      consumed.push({ nodeId: producerId, proposal, acceptanceCriteria, reviews: attemptReviews });
     }
     let candidate: ResultProposal | undefined;
     if (isCheckerRole(node.role)) {

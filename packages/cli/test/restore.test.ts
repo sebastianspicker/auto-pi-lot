@@ -5,7 +5,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { createRestorePoint, discardRestorePoint, restoreRefFor } from "../src/restore.js";
+import {
+  createRestorePoint,
+  discardRestorePoint,
+  removeActiveRestoreIndex,
+  restoreHint,
+  restoreRefFor,
+} from "../src/restore.js";
 
 function git(cwd: string, ...args: string[]): string {
   const result = spawnSync("git", args, { cwd, encoding: "utf8" });
@@ -130,4 +136,22 @@ test("discarding a restore point removes only its own ref, so the run id can be 
   // A ref that no longer points at the snapshot this process made is left alone.
   await assert.rejects(discardRestorePoint({ ...other, commit: again.commit }));
   assert.equal(git(root, "rev-parse", other.ref), other.commit);
+});
+
+test("removing the active restore index is a no-op once the restore point is finished", async (t) => {
+  const root = await repository();
+  t.after(() => rm(root, { recursive: true, force: true }));
+  removeActiveRestoreIndex();
+  const point = await createRestorePoint(root, "finished");
+  removeActiveRestoreIndex();
+  assert.equal(git(root, "rev-parse", point.ref), point.commit);
+});
+
+test("the restore hint limits the pathspec to the workspace inside the repository", () => {
+  const point = { ref: "refs/auto-pi-lot/restore/r", commit: "a".repeat(40), root: "/repo", dirty: false };
+  const sub = restoreHint(point, "/repo/sub");
+  assert.match(sub, /git -C \/repo restore --source=refs\/auto-pi-lot\/restore\/r --worktree -- sub /);
+  assert.match(sub, /edits made in that path after the run started are overwritten too/);
+  assert.match(restoreHint(point, "/repo"), /--worktree -- \. /);
+  assert.match(sub, /gitignored files are not included/);
 });

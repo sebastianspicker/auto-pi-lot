@@ -22,12 +22,12 @@ export async function runChecks(args: readonly string[]): Promise<number> {
     return 1;
   }
   const { values } = parsed.flags;
-  const workspace = resolve(values.get("--workspace") ?? process.cwd());
-  const problem = await checkWorkspace(workspace);
-  if (problem !== null) {
-    console.error(problem);
+  const checked = await checkWorkspace(resolve(values.get("--workspace") ?? process.cwd()));
+  if (!checked.ok) {
+    console.error(checked.error);
     return 1;
   }
+  const workspace = checked.workspace;
   const paths = runtimePaths(workspace);
   const loaded = await loadConfig(resolve(values.get("--config") ?? paths.config), true);
   if (!loaded.ok) {
@@ -49,6 +49,7 @@ export async function runChecks(args: readonly string[]): Promise<number> {
   const cancel = (): void => controller.abort();
   process.on("SIGINT", cancel);
   process.on("SIGTERM", cancel);
+  process.on("SIGHUP", cancel);
   try {
     const fingerprintCache = createFingerprintCache();
     const sourceDigest = await fingerprintWorkspace(workspace, { cache: fingerprintCache });
@@ -85,6 +86,7 @@ export async function runChecks(args: readonly string[]): Promise<number> {
   } finally {
     process.off("SIGINT", cancel);
     process.off("SIGTERM", cancel);
+    process.off("SIGHUP", cancel);
     await unlock();
   }
 }

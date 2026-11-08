@@ -72,6 +72,19 @@ test("a duplicate task ID is reported", () => {
   );
 });
 
+test("a duplicate milestone ID is reported", () => {
+  const ledger = ledgerWithTasks([defaultTask]);
+  ledger.milestones = [
+    { id: "M0", packages: ["AP-00"] },
+    { id: "M0", packages: ["AP-00"] },
+  ];
+  const errors = validateLedger(ledger, alwaysExists);
+  assert.ok(
+    errors.some((error) => error.includes("duplicate milestone ID: M0")),
+    JSON.stringify(errors),
+  );
+});
+
 test("an implemented task without qualifying evidence is reported", () => {
   const task: LedgerTask = { ...defaultTask, status: "implemented", evidence: [] };
   const errors = validateLedger(ledgerWithTasks([task]), alwaysExists);

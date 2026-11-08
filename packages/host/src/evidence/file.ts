@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { constants } from "node:fs";
-import { type FileHandle, mkdir, open, readdir, rename, unlink } from "node:fs/promises";
+import { lstat, mkdir, open, readdir, rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
 
 import {
@@ -12,6 +12,7 @@ import {
   parseDto,
 } from "@auto-pi-lot/core";
 
+import { isMissing, NOFOLLOW, openRegular, syncDirectory } from "../fs.js";
 import { encodeRunId } from "../paths.js";
 import { artifactId, MAX_ARTIFACT_BYTES, validateEvidence } from "./memory.js";
 
@@ -30,42 +31,12 @@ export class EvidenceCorruptError extends Error {
   }
 }
 
-const NOFOLLOW = constants.O_NOFOLLOW ?? 0;
 const ID_PATTERN = /^sha256:([0-9a-f]{64})$/;
-
-function isMissing(error: unknown): boolean {
-  return typeof error === "object" && error !== null && (error as { code?: unknown }).code === "ENOENT";
-}
 
 function hexOf(id: string): string {
   const match = ID_PATTERN.exec(id);
   if (match?.[1] === undefined) throw new Error(`Not a sha256 id: ${id}`);
   return match[1];
-}
-
-/** Opens `path` without following a symlink and refuses anything that is not a regular file. */
-async function openRegular(path: string, flags: number, mode?: number): Promise<FileHandle> {
-  const handle = await open(path, flags | NOFOLLOW, mode);
-  try {
-    if (!(await handle.stat()).isFile()) throw new Error(`Path ${path} is not a regular file`);
-  } catch (error) {
-    await handle.close();
-    throw error;
-  }
-  return handle;
-}
-
-async function syncDirectory(directory: string): Promise<void> {
-  try {
-    const handle = await open(directory, "r");
-    try {
-      await handle.sync();
-    } finally {
-      await handle.close();
-    }
-  } catch {
-    // Some platforms cannot open or fsync a directory.
-  }
 }
 
 /** Writes `data` to `path` atomically: temp file, fsync, rename. An existing file is left as is. */
@@ -217,7 +188,12 @@ export class FileArtifactStore implements ArtifactStore {
     }
     const id = artifactId(bytes);
     const path = join(this.#directory, hexOf(id));
-    if ((await readRegular(path)) === null) await writeAtomic(this.#directory, path, bytes);
+    const existing = await lstat(path).catch((error: unknown) => {
+      if (isMissing(error)) return null;
+      throw error;
+    });
+    if (existing === null) await writeAtomic(this.#directory, path, bytes);
+    else if (!existing.isFile()) throw new Error(`Path ${path} is not a regular file`);
     return id;
   }
 

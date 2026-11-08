@@ -514,3 +514,47 @@ test("a consumes map with a __proto__ producer id does not confuse the checker l
   const verdict = await gate.evaluate({ ...checkerRequest(proposal), consumes, verifies: ["__proto__"] });
   assert.equal(verdict.decision, "rejected");
 });
+
+test("a reason clipped at a whitespace boundary is stored trimmed and the verdict resolves", async () => {
+  const { evidence, gate } = setup();
+  const review = makeReview("a1", "d", "v1", [{ criterion: "other", verdict: "pass", evidenceIds: [] }]);
+  const proposal = reviewerProposal("v1", review);
+  for (const record of [proposal, review]) await evidence.put(record);
+  const prefix = `review ${review.id} does not judge every acceptance criterion: missing `;
+  // Put a space at character 1999 of the reason, so the 2000-character cut ends in whitespace.
+  const criterion = `${"x".repeat(1999 - prefix.length)} ${"y".repeat(50)}`;
+  const verdict = await gate.evaluate(checkerRequest(proposal, [criterion]));
+  assert.equal(verdict.decision, "rejected");
+  const [record] = await acceptanceRecords(evidence);
+  for (const reason of [...(verdict.reasons ?? []), ...(record?.reasons ?? [])]) {
+    assert.equal(reason, reason.trim());
+    assert.ok(reason.length > 0);
+  }
+});
+
+test("a checker verifying two candidates is rejected when it reviewed only one", async () => {
+  const { evidence, gate } = setup();
+  const review = makeReview("a1", "d", "v1");
+  const proposal = reviewerProposal("v1", review);
+  for (const record of [proposal, review]) await evidence.put(record);
+  const verdict = await gate.evaluate({
+    ...checkerRequest(proposal),
+    consumes: { n: "a1", m: "a2" },
+    verifies: ["n", "m"],
+    producers: [node("n", "implementer"), node("m", "implementer")],
+  });
+  assert.equal(verdict.decision, "rejected");
+});
+
+test("evaluating the same request twice stores one acceptance record and returns the same id", async () => {
+  const evidence = new MemoryEvidenceStore();
+  let tick = 0;
+  const gate = new EvidenceGate({ evidence, clock: () => new Date(NOW.getTime() + 1000 * tick++) });
+  const unit = makeCheck("a1", "unit");
+  const proposal = makeProposal("a1", { checkReceiptIds: [unit.id] });
+  for (const record of [proposal, unit]) await evidence.put(record);
+  const first = await gate.evaluate(producerRequest(proposal, ["unit"]));
+  const second = await gate.evaluate(producerRequest(proposal, ["unit"]));
+  assert.deepEqual(second, first);
+  assert.equal((await acceptanceRecords(evidence)).length, 1);
+});

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -78,7 +78,23 @@ test("init → dry-run previews a real plan without model configuration or files
   assert.match(legacy.stderr, /require --max-concurrent 1/);
 });
 
-for (const signal of ["SIGINT", "SIGTERM"] as const) {
+test("--dry-run reports an existing lock instead of failing", async (t) => {
+  const workspace = await mkdtemp(join(tmpdir(), "apl-dry-lock-"));
+  t.after(() => rm(workspace, { recursive: true, force: true }));
+  const lock = join(workspace, ".auto-pi-lot", "journal", ".writer.lock");
+  await mkdir(join(workspace, ".auto-pi-lot", "journal"), { recursive: true });
+  const owner = { pid: 999999999, hostname: "other-host", startedAt: "2026-01-01T00:00:00.000Z" };
+  await writeFile(lock, `${JSON.stringify(owner)}\n`);
+  const result = run("run", "--dry-run", "--workspace", workspace);
+  assert.equal(result.status, 0, result.stderr);
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.heldLocks.length, 1);
+  assert.match(report.heldLocks[0], /Run lock exists/);
+  assert.match(report.heldLocks[0], /pid 999999999 on host other-host/);
+  assert.match(await readFile(lock, "utf8"), /other-host/);
+});
+
+for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
   test(`${signal} cancels a CLI run and releases journal ownership`, { timeout: 30_000 }, async (t) => {
     const workspace = await mkdtemp(join(tmpdir(), "apl-interrupt-"));
     t.after(() => rm(workspace, { recursive: true, force: true }));

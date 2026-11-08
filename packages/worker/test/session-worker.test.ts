@@ -151,6 +151,8 @@ function assignmentFor(
       ...node,
     },
     consumes: {},
+    // The candidate proposal most tests store; it only matters when `consumes` names attempt-0.
+    proposalsByAttempt: { "attempt-0": "sha256:candidate" },
     verifies: [],
     producers: [],
     repairOf: null,
@@ -392,6 +394,38 @@ test("package and test files are listed first, so padding files cannot push them
   const proposal = h.evidence.ofKind("proposal")[0] as ResultProposal;
   assert.deepEqual(proposal.changedPaths?.slice(0, 3), ["package.json", "zz/weak.test.ts", "0/000.ts"]);
   assert.ok(proposal.limitations.includes("3 more changed paths not listed"));
+});
+
+test("only real test and manifest files are listed first, not any path containing test or spec", async () => {
+  const after = new Map(
+    Array.from({ length: 300 }, (_, index) => [`pad/a-test-${String(index).padStart(4, "0")}.txt`, "x"]),
+  );
+  after.set("test/weakened.test.js", "weakened");
+  after.set("src/inspector/render.ts", "x");
+  const h = harness([completeWith(workJson())], {
+    fingerprints: ["sha256:base", "sha256:after"],
+    entries: [new Map(), after],
+  });
+  await run(h, assignmentFor("implementer"));
+  const proposal = h.evidence.ofKind("proposal")[0] as ResultProposal;
+  assert.equal(proposal.changedPaths?.[0], "test/weakened.test.js");
+  assert.equal(proposal.changedPaths?.[1], "pad/a-test-0000.txt");
+});
+
+test("test files of other languages are listed first too", async () => {
+  const after = new Map([
+    ["a/latest.md", "x"],
+    ["cmd/x_test.go", "x"],
+    ["lib/test_x.py", "x"],
+    ["spec/models/user_spec.rb", "x"],
+  ]);
+  const h = harness([completeWith(workJson())], {
+    fingerprints: ["sha256:base", "sha256:after"],
+    entries: [new Map(), after],
+  });
+  await run(h, assignmentFor("implementer"));
+  const proposal = h.evidence.ofKind("proposal")[0] as ResultProposal;
+  assert.equal(proposal.changedPaths?.at(-1), "a/latest.md");
 });
 
 test("changed paths are listed since the run's first attempt, so a rejected attempt's edit stays visible", async () => {
@@ -858,6 +892,61 @@ test("context files are loaded for every role except the checker roles", async (
     assert.equal(outcomes[0]?.type, "result", role);
     assert.equal(h.opened[0]?.loadContextFiles, loadContextFiles, role);
   }
+});
+
+test("a check id listed twice runs once", async () => {
+  const h = harness([completeWith(workJson())]);
+  await run(h, assignmentFor("implementer", {}, { checks: ["unit", "unit"] }));
+  assert.equal(h.checksRun.length, 1);
+  assert.equal(h.evidence.ofKind("check").length, 1);
+});
+
+test("every review of a consumed result reaches the packet, not just the first", async () => {
+  const evidence = await candidateEvidence();
+  for (const [index, verdict] of (["pass", "fail"] as const).entries()) {
+    await evidence.put({
+      kind: "review",
+      schemaVersion: 1,
+      id: `sha256:review-${index}`,
+      runId: RUN_ID,
+      candidateDigest: "sha256:candidate",
+      candidateAttemptId: "attempt-0",
+      reviewerAttemptId: `attempt-r${index}`,
+      verdicts: [{ criterion: "Alpha", verdict, evidenceIds: [], note: `note-${verdict}` }],
+      limitations: [],
+    });
+  }
+  const h = harness([completeWith(workJson())], { evidence, fingerprints: ["sha256:same"] });
+  await run(h, assignmentFor("integrator", { consumes: { produce: "attempt-0" }, producers: [PRODUCER_SPEC] }));
+  const prompt = h.session.prompts[0] ?? "";
+  assert.ok(prompt.includes("Alpha: pass (note-pass)"));
+  assert.ok(prompt.includes("Alpha: fail (note-fail)"));
+});
+
+test("only the journaled proposal of a consumed attempt reaches the packet, not one planted beside it", async () => {
+  const evidence = new MemoryEvidence();
+  const base = {
+    kind: "proposal" as const,
+    schemaVersion: 1 as const,
+    runId: RUN_ID,
+    graphId: "graph-1",
+    graphRevision: 2,
+    nodeId: "produce",
+    attemptId: "attempt-0",
+    outputArtifactIds: [],
+    limitations: [],
+    requestedChecks: [],
+    checkReceiptIds: [],
+    inputFingerprint: "sha256:in",
+    resultRevision: "sha256:same",
+  };
+  await evidence.put({ ...base, id: "sha256:aaa-planted", summary: "Planted", claims: ["planted-claim"] });
+  await evidence.put({ ...base, id: "sha256:candidate", summary: "Built it", claims: ["real-claim"] });
+  const h = harness([completeWith(workJson())], { evidence, fingerprints: ["sha256:same"] });
+  await run(h, assignmentFor("integrator", { consumes: { produce: "attempt-0" }, producers: [PRODUCER_SPEC] }));
+  const prompt = h.session.prompts[0] ?? "";
+  assert.ok(prompt.includes("real-claim"));
+  assert.ok(!prompt.includes("planted-claim"));
 });
 
 test("a review that does not judge the producer's criteria is repaired with the exact list", async () => {

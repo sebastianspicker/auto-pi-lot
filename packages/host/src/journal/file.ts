@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { type FileHandle, mkdir, open } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
 import {
@@ -10,6 +10,7 @@ import {
   parseJournalEvent,
 } from "@auto-pi-lot/core";
 
+import { isMissing, openRegular, syncDirectory } from "../fs.js";
 import { encodeRunId } from "../paths.js";
 
 /** Longest record line (without its newline) the store writes or reads, in bytes. */
@@ -44,37 +45,19 @@ interface ParsedFile {
 interface RunState {
   nextSeq: number;
   existed: boolean;
+  /** File size this store last wrote or read; a different size means another writer appended. */
+  bytes: number;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isMissing(error: unknown): boolean {
-  return isRecord(error) && error.code === "ENOENT";
-}
-
 const decoder = new TextDecoder("utf-8", { fatal: true });
-
-/** `O_NOFOLLOW` does not exist on Windows. */
-const NOFOLLOW = constants.O_NOFOLLOW ?? 0;
-
-/** Opens `path` without following a symlink and refuses anything that is not a regular file. */
-async function openRegular(path: string, flags: number, mode?: number): Promise<FileHandle> {
-  const handle = await open(path, flags | NOFOLLOW, mode);
-  try {
-    if (!(await handle.stat()).isFile()) throw new Error(`Journal path ${path} is not a regular file`);
-  } catch (error) {
-    await handle.close();
-    throw error;
-  }
-  return handle;
-}
 
 /**
  * Checks one record line. Returns the event when valid, otherwise why it is not: `unreadable`
- * (not UTF-8 or not JSON, what a cut-short write leaves) or `invalid` (complete JSON that is not a
- * valid record).
+ * (not UTF-8 or not JSON) or `invalid` (complete JSON that is not a valid record).
  */
 function checkLine(
   bytes: Uint8Array,
@@ -112,7 +95,7 @@ function checkLine(
 /**
  * Durable, append-only journal: one JSON Lines file per run, one `{seq, digest, event}` record
  * per line. Every append is fsynced before it resolves. Only a torn last line (no trailing
- * newline, or not UTF-8 or JSON) is treated as never written; a complete record that is invalid,
+ * newline) is treated as never written; a newline-terminated record that is unreadable or invalid,
  * last or not, is a durable record gone bad and throws `JournalCorruptError`. Files are opened
  * without following symlinks and must be regular files.
  */
@@ -186,8 +169,9 @@ export class FileJournalStore implements JournalStore {
       const checked = checkLine(data.subarray(offset, end), runId, events.length + 1);
       const isLast = !terminated || newline + 1 >= data.length;
       if ("reason" in checked) {
-        // Torn: the last line, cut short by a crash. Anything else bad is corrupt, never deleted.
-        if (isLast && (!terminated || checked.kind === "unreadable")) {
+        // Torn: only an unterminated last line, cut short by a crash. A newline-terminated bad line is
+        // a durable record gone bad: corrupt, never deleted.
+        if (isLast && !terminated) {
           return { events, validBytes: offset, tornTail: true, existed: true };
         }
         throw new JournalCorruptError(runId, path, lineNumber, checked.reason);
@@ -210,7 +194,7 @@ export class FileJournalStore implements JournalStore {
         await handle.close();
       }
     }
-    return { nextSeq: parsed.events.length + 1, existed: parsed.existed };
+    return { nextSeq: parsed.events.length + 1, existed: parsed.existed, bytes: parsed.validBytes };
   }
 
   async #appendNow(event: JournalEvent): Promise<void> {
@@ -234,31 +218,23 @@ export class FileJournalStore implements JournalStore {
         0o600,
       );
       try {
+        const { size } = await handle.stat();
+        if (size !== state.bytes) {
+          throw new Error(`Journal for run ${runId} changed under this store (another writer?): refusing to append`);
+        }
         await handle.appendFile(line, "utf8");
         await handle.datasync();
       } finally {
         await handle.close();
       }
-      if (created) await this.#syncDirectory();
+      if (created) await syncDirectory(this.#directory);
     } catch (error) {
       // The file may hold a partial line now; re-read it before the next append.
       this.#runs.delete(runId);
       throw error;
     }
     state.nextSeq += 1;
+    state.bytes += Buffer.byteLength(line, "utf8");
     state.existed = true;
-  }
-
-  async #syncDirectory(): Promise<void> {
-    try {
-      const handle = await open(this.#directory, "r");
-      try {
-        await handle.sync();
-      } finally {
-        await handle.close();
-      }
-    } catch {
-      // Some platforms cannot open or fsync a directory.
-    }
   }
 }
